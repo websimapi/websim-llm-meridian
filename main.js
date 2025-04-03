@@ -28,7 +28,7 @@ renderer.outputColorSpace = THREE.SRGBColorSpace; // Correct color space
 const worldManager = new WorldManager(scene);
 const uiManager = new UIManager();
 const playerController = new PlayerController(camera, scene, worldManager, uiManager);
-const minimap = new Minimap(worldManager); // Create the minimap
+const minimap = new Minimap(worldManager, renderer); // Pass renderer to Minimap
 
 // Make core components accessible for debugging
 window.game = {
@@ -75,16 +75,9 @@ mainLight.shadow.camera.top = shadowCamSize;
 mainLight.shadow.camera.bottom = -shadowCamSize;
 mainLight.shadow.bias = -0.0005; // Adjust bias to prevent shadow acne
 
-// Add a helper for the shadow camera (optional, for debugging)
-// const shadowCamHelper = new THREE.CameraHelper(mainLight.shadow.camera);
-// scene.add(shadowCamHelper);
-
-
 // Initial Setup
-// Load player model (async) - call after player controller is initialized
-playerController.loadPlayerModel('/path/to/your/first-person-rig.gltf') 
-    .then(() => console.log("Player model loaded (or placeholder created)."))
-    .catch(err => console.error("Failed to load player model:", err));
+// Load player model (async) - provide a placeholder path or remove if no model yet
+playerController.loadPlayerModel(null); // Use placeholder initially
 
 // Game Loop
 function animate() {
@@ -93,8 +86,9 @@ function animate() {
     const delta = window.game.playerController.clock.getDelta();
 
     playerController.update(delta);
-    worldManager.update(playerController.getPlayerPosition());
-    minimap.update(playerController.getPlayerPosition());
+    // worldManager update might not be needed every frame unless dynamic things happen
+    // worldManager.update(playerController.getPlayerPosition());
+    minimap.update(playerController.getPlayerPosition()); // Update minimap state (position, texture)
 
     // Update lighting target (e.g., make it follow the player slightly)
     const playerPos = playerController.getPlayerPosition();
@@ -111,6 +105,7 @@ window.addEventListener('resize', () => {
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
     minimap.updateCanvasSize(); // Notify minimap of potential resize
+    minimap.patternNeedsUpdate = true; // Force pattern regen on resize
 });
 
 // Initial world generation
