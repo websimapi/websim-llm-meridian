@@ -149,14 +149,3 @@ export class WorldManager {
         await this.loadNewArea(prompt, type);
     }
 }
-
-// Make loadNewDebugRoom accessible from console for testing
-window.loadNewDebugRoom = async (prompt, type) => {
-    const worldManager = window.game.worldManager; // Assuming game components are accessible globally for debug
-    if (worldManager) {
-        await worldManager.loadNewDebugRoom(prompt, type);
-    } else {
-        console.error("WorldManager not found on window.game");
-    }
-};
-

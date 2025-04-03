@@ -15,6 +15,25 @@ const worldManager = new WorldManager(scene);
 const playerController = new PlayerController(camera, scene, worldManager); // Pass worldManager for collision/interaction
 const uiManager = new UIManager();
 
+// Make core components accessible for debugging (optional, but helps with the current structure)
+window.game = {
+    scene,
+    camera,
+    renderer,
+    worldManager,
+    playerController,
+    uiManager
+};
+
+// Define the debug function here, where worldManager is in scope
+window.loadNewDebugRoom = async (prompt, type) => {
+    if (window.game && window.game.worldManager) {
+        await window.game.worldManager.loadNewDebugRoom(prompt, type); // Use the instance directly
+    } else {
+        console.error("WorldManager not found on window.game");
+    }
+};
+
 // Initial Setup
 camera.position.set(0, 1.6, 5); // Player height and starting position
 scene.add(new THREE.AmbientLight(0x404040)); // Soft white light
@@ -50,4 +69,3 @@ worldManager.generateInitialWorld().then(() => {
 // Add debug axes
 const axesHelper = new THREE.AxesHelper( 5 );
 scene.add( axesHelper );
-
