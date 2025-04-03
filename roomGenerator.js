@@ -195,38 +195,69 @@ export class RoomGenerator {
         // Draw the original image to the canvas
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-        // Calculate blend width based on 45 degrees (1/8th of the width)
-        // Making it slightly larger than 12.5% to ensure good coverage
-        const blendWidth = Math.floor(image.width * 0.15); // ~54 degrees (15% width)
+        // Create a gradient at the left and right edges to hide the seam
+        // Increased blend width from 5% to 12% of the image width for a more subtle transition
+        const blendWidth = Math.floor(image.width * 0.12);
 
-        // Create a smoother, slightly stronger gradient for a 'foggy' blend
         // Left edge gradient (seam start)
         const leftGradient = ctx.createLinearGradient(0, 0, blendWidth, 0);
-        // Start with more opacity, fade out
-        leftGradient.addColorStop(0, 'rgba(255, 255, 255, 0.75)'); // More opaque start
-        leftGradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.4)'); // Middle point
-        leftGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');    // Fully transparent end
+        // Using a more complex gradient with multiple stops for cloud-like effect
+        leftGradient.addColorStop(0, 'rgba(255, 255, 255, 0.7)');  // More opaque white
+        leftGradient.addColorStop(0.3, 'rgba(255, 255, 255, 0.5)'); // Semi-transparent
+        leftGradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.3)'); // Less transparent
+        leftGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');     // Fully transparent
 
         // Right edge gradient (seam end)
         const rightGradient = ctx.createLinearGradient(image.width, 0, image.width - blendWidth, 0);
-        // Mirror the left gradient
-        rightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.75)'); // More opaque start
-        rightGradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.4)'); // Middle point
-        rightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');    // Fully transparent end
+        // Matching complex gradient for right side
+        rightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.7)');  // More opaque white
+        rightGradient.addColorStop(0.3, 'rgba(255, 255, 255, 0.5)'); // Semi-transparent
+        rightGradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.3)'); // Less transparent
+        rightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');     // Fully transparent
 
-
-        // Apply the gradients over the existing image
-        // Use 'source-over' (default) blending which draws the gradient on top
+        // Apply the gradients over the existing image with cloud texture
+        // Use 'soft-light' blending mode for a more natural cloud-like effect
+        ctx.globalCompositeOperation = 'soft-light';
         ctx.fillStyle = leftGradient;
         ctx.fillRect(0, 0, blendWidth, image.height);
 
         ctx.fillStyle = rightGradient;
         ctx.fillRect(image.width - blendWidth, 0, blendWidth, image.height);
 
+        // Add some random cloud-like patterns for more natural transition
+        ctx.globalCompositeOperation = 'overlay';
+        
+        // Function to create random cloud-like shapes
+        const createCloudPattern = (x, width) => {
+            for (let i = 0; i < 10; i++) {
+                const cloudX = x + Math.random() * width;
+                const cloudY = Math.random() * image.height;
+                const cloudRadius = Math.random() * (width * 0.3) + (width * 0.1);
+                const cloudOpacity = Math.random() * 0.4 + 0.1;
+                
+                const cloudGradient = ctx.createRadialGradient(
+                    cloudX, cloudY, 0,
+                    cloudX, cloudY, cloudRadius
+                );
+                
+                cloudGradient.addColorStop(0, `rgba(255, 255, 255, ${cloudOpacity})`);
+                cloudGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                
+                ctx.fillStyle = cloudGradient;
+                ctx.beginPath();
+                ctx.arc(cloudX, cloudY, cloudRadius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        };
+        
+        // Create cloud patterns at both seam edges
+        createCloudPattern(0, blendWidth);
+        createCloudPattern(image.width - blendWidth, blendWidth);
+
         // Update the texture with the processed canvas
         texture.image = canvas;
         texture.needsUpdate = true;
-        console.log(`Processed skybox seam with increased 'fog' blend width: ${blendWidth}px`);
+        console.log(`Processed skybox seam with enhanced cloud effect, blend width: ${blendWidth}px`);
     }
 
     createPlaceholderTexture(color = '#FF00FF') { // Default to magenta for visibility
