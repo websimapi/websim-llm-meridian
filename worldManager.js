@@ -162,7 +162,7 @@ export class WorldManager {
             },
             timestamp: new Date().toISOString(),
             structure: roomData.structure,
-            objects: roomData.objects
+            objects: roomData.objects || [] // Ensure objects array exists
         };
         
         this.rooms.push(roomRecord);
@@ -207,6 +207,122 @@ export class WorldManager {
         }
     }
 
+    async generateSceneObject(description) {
+        if (this.currentRoomIndex < 0) {
+            console.error("No active room to add object to");
+            return;
+        }
+
+        this.showLoading();
+        try {
+            // Use LLM to get object details
+            const objectPrompt = `Create a simple 3D object based on this description: "${description}". Return JSON with properties: 
+            {
+              "type": "simple type name (like chair, table, crystal)",
+              "description": "short visual description",
+              "dimensions": {"width": number, "height": number, "depth": number},
+              "color": "hex color code that fits the object",
+              "position": {"x": number, "y": number, "z": number},
+              "rotation": {"x": number, "y": number, "z": number}
+            }
+            Use reasonable dimensions and position values for a room space that's ${this.tileSize}x${this.tileSize} units. Position y=0 is the floor level.`;
+
+            const completion = await websim.chat.completions.create({
+                messages: [{ role: "user", content: objectPrompt }],
+                json: true,
+            });
+
+            const objectData = JSON.parse(completion.content);
+            
+            // Validate the object data
+            if (!objectData.type || !objectData.dimensions || !objectData.color || !objectData.position) {
+                throw new Error("Invalid object data returned from LLM");
+            }
+
+            // Add object to current room's data
+            const currentRoom = this.rooms[this.currentRoomIndex];
+            if (!currentRoom.objects) {
+                currentRoom.objects = [];
+            }
+            
+            // Add object with unique ID and creation timestamp
+            const newObject = {
+                ...objectData,
+                id: Date.now(), // Unique ID for the object
+                createdAt: new Date().toISOString()
+            };
+            
+            currentRoom.objects.push(newObject);
+            
+            // Create and add 3D object to the scene
+            this.createObject3D(newObject);
+            
+            // Show success message
+            if (window.game && window.game.uiManager) {
+                window.game.uiManager.showNotification(`Created ${objectData.type}`);
+            }
+            
+        } catch (error) {
+            console.error("Error generating object:", error);
+            if (window.game && window.game.uiManager) {
+                window.game.uiManager.showNotification("Failed to generate object", "error");
+            }
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    createObject3D(objectData) {
+        // Determine which geometry to use based on object type
+        let geometry;
+        const dims = objectData.dimensions;
+        
+        // Simple shape selection based on object type
+        // Could be expanded to use more complex geometries
+        if (objectData.type.includes('ball') || objectData.type.includes('sphere')) {
+            const radius = Math.max(dims.width, dims.height, dims.depth) / 2;
+            geometry = new THREE.SphereGeometry(radius, 32, 32);
+        } else if (objectData.type.includes('cylinder') || objectData.type.includes('pillar')) {
+            const radius = Math.max(dims.width, dims.depth) / 2;
+            geometry = new THREE.CylinderGeometry(radius, radius, dims.height, 32);
+        } else {
+            // Default to box for most objects (table, chair, etc)
+            geometry = new THREE.BoxGeometry(dims.width, dims.height, dims.depth);
+        }
+        
+        // Create material
+        const material = new THREE.MeshStandardMaterial({ 
+            color: objectData.color,
+            roughness: 0.7,
+            metalness: 0.2
+        });
+        
+        // Create mesh and position it
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(
+            objectData.position.x,
+            objectData.position.y + (dims.height / 2), // Adjust Y to account for object height
+            objectData.position.z
+        );
+        
+        // Apply rotation if specified
+        if (objectData.rotation) {
+            mesh.rotation.set(
+                THREE.MathUtils.degToRad(objectData.rotation.x || 0),
+                THREE.MathUtils.degToRad(objectData.rotation.y || 0),
+                THREE.MathUtils.degToRad(objectData.rotation.z || 0)
+            );
+        }
+        
+        // Store object ID in the mesh for potential future manipulation
+        mesh.userData.objectId = objectData.id;
+        
+        // Add to world objects group
+        this.worldObjects.add(mesh);
+        
+        return mesh;
+    }
+
     async teleportToRoom(index) {
         if (index < 0 || index >= this.rooms.length) {
             console.error("Invalid room index:", index);
@@ -233,6 +349,14 @@ export class WorldManager {
             };
             
             this.buildRoom(roomData);
+            
+            // Recreate any objects in the room
+            if (roomToLoad.objects && roomToLoad.objects.length > 0) {
+                roomToLoad.objects.forEach(objectData => {
+                    this.createObject3D(objectData);
+                });
+            }
+            
             this.currentRoomIndex = index;
             
             // Update UI to reflect current room
