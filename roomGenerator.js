@@ -196,22 +196,20 @@ export class RoomGenerator {
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
         // Create a gradient at the left and right edges to hide the seam
-        // Calculate blend width for 45 degrees (45/360 = 1/8 of the width)
-        const blendWidth = Math.floor(image.width / 8); // 1/8th of the width for 45 degrees blend
+        // Increase blend width to cover the seam more significantly (e.g., 15% of width)
+        const blendWidth = Math.floor(image.width * 0.15); // Increased from 0.05 to 0.15
 
-        console.log(`Processing skybox seam with 45-degree blend width: ${blendWidth}px`);
-
-        // Left edge gradient (seam start) - Blend from left edge inward
+        // Left edge gradient (seam start)
         const leftGradient = ctx.createLinearGradient(0, 0, blendWidth, 0);
         // Using a more subtle alpha blend
-        leftGradient.addColorStop(0, 'rgba(255, 255, 255, 0.7)'); // Start semi-transparent
-        leftGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // End fully transparent
+        leftGradient.addColorStop(0, 'rgba(255, 255, 255, 0.5)'); // Semi-transparent white-ish overlay
+        leftGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Fully transparent
 
-        // Right edge gradient (seam end) - Blend from right edge inward
+        // Right edge gradient (seam end)
         const rightGradient = ctx.createLinearGradient(image.width, 0, image.width - blendWidth, 0);
         // Using a more subtle alpha blend
-        rightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.7)'); // Start semi-transparent
-        rightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // End fully transparent
+        rightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.5)'); // Semi-transparent white-ish overlay
+        rightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Fully transparent
 
         // Apply the gradients over the existing image
         // Use 'source-over' (default) blending which draws the gradient on top
@@ -224,6 +222,7 @@ export class RoomGenerator {
         // Update the texture with the processed canvas
         texture.image = canvas;
         texture.needsUpdate = true;
+        console.log(`Processed skybox seam with blend width: ${blendWidth}px`);
     }
 
     createPlaceholderTexture(color = '#FF00FF') { // Default to magenta for visibility
