@@ -196,19 +196,19 @@ export class RoomGenerator {
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
         // Create a gradient at the left and right edges to hide the seam
-        // Increase blend width to cover the seam more significantly (e.g., 15% of width)
-        const blendWidth = Math.floor(image.width * 0.15); // Increased from 0.05 to 0.15
+        // Blend width relative to image width (increased percentage for wider blend)
+        const blendWidth = Math.floor(image.width * 0.20); // 20% of the width for blending (increased from 5%)
 
         // Left edge gradient (seam start)
         const leftGradient = ctx.createLinearGradient(0, 0, blendWidth, 0);
-        // Using a more subtle alpha blend
-        leftGradient.addColorStop(0, 'rgba(255, 255, 255, 0.5)'); // Semi-transparent white-ish overlay
+        // Using a stronger alpha blend for a more noticeable "cloud" effect
+        leftGradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)'); // More opaque white-ish overlay near seam
         leftGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Fully transparent
 
         // Right edge gradient (seam end)
         const rightGradient = ctx.createLinearGradient(image.width, 0, image.width - blendWidth, 0);
-        // Using a more subtle alpha blend
-        rightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.5)'); // Semi-transparent white-ish overlay
+        // Using a stronger alpha blend
+        rightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)'); // More opaque white-ish overlay near seam
         rightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Fully transparent
 
         // Apply the gradients over the existing image
@@ -222,7 +222,7 @@ export class RoomGenerator {
         // Update the texture with the processed canvas
         texture.image = canvas;
         texture.needsUpdate = true;
-        console.log(`Processed skybox seam with blend width: ${blendWidth}px`);
+        console.log(`Processed skybox seam with increased blend width: ${blendWidth}px (20%) and stronger alpha`);
     }
 
     createPlaceholderTexture(color = '#FF00FF') { // Default to magenta for visibility
