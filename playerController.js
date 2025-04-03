@@ -9,6 +9,7 @@ export class PlayerController {
         this.velocity = new THREE.Vector3();
         this.moveSpeed = 10.0; // Increased from 5.0 to 10.0 to match larger rooms
         this.lookSpeed = 0.002; // Radians per pixel movement
+        this.isFirstPerson = true; // Default to first-person view
 
         this.moveForward = false;
         this.moveBackward = false;
@@ -96,8 +97,11 @@ export class PlayerController {
         if (this.moveBackward) this.velocity.z += 1;
         if (this.moveLeft) this.velocity.x -= 1;
         if (this.moveRight) this.velocity.x += 1;
-        if (this.moveUp) this.velocity.y += 1; // Flying/vertical movement
-        if (this.moveDown) this.velocity.y -= 1;
+        if (!this.isFirstPerson) {
+            // Only allow vertical movement in third-person/flying mode
+            if (this.moveUp) this.velocity.y += 1;
+            if (this.moveDown) this.velocity.y -= 1;
+        }
 
         // Normalize velocity vector if moving diagonally
         this.velocity.normalize().multiplyScalar(this.moveSpeed * delta);
@@ -121,5 +125,25 @@ export class PlayerController {
 
     getPlayerPosition() {
         return this.yawObject.position;
+    }
+
+    toggleViewMode() {
+        this.isFirstPerson = !this.isFirstPerson;
+        
+        if (this.isFirstPerson) {
+            // First-person: camera at eye level
+            this.pitchObject.position.set(0, 0, 0);
+            this.yawObject.position.y = 1.6; // Eye height
+        } else {
+            // Third-person: camera higher up and back
+            this.pitchObject.position.set(0, 0, 0);
+            this.yawObject.position.y = 5; // Higher position for overview
+        }
+        
+        if (window.game && window.game.uiManager) {
+            window.game.uiManager.showNotification(
+                this.isFirstPerson ? "First-person view enabled" : "Third-person view enabled"
+            );
+        }
     }
 }
