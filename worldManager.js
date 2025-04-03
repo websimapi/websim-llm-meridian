@@ -17,22 +17,18 @@ export class WorldManager {
         // Default background colors
         this.defaultOutdoorBg = new THREE.Color(0x87ceeb); // Sky blue
         this.defaultIndoorBg = new THREE.Color(0x111111); // Dark grey
-        // No fog initially
-        this.scene.fog = null;
     }
 
     async generateInitialWorld() {
         console.log("Generating initial world...");
         this.showLoading();
         try {
-            // Use a simpler initial prompt for faster loading maybe
-            const initialRoomData = await this.roomGenerator.generateRoomData('A grassy field under a clear blue sky.', 'outdoor');
+            const initialRoomData = await this.roomGenerator.generateRoomData('A bright, grassy clearing in a fantasy forest, under a blue sky.', 'outdoor');
             this.buildRoom(initialRoomData);
             this.addRoomToCollection(initialRoomData);
         } catch (error) {
             console.error("Failed to generate initial world:", error);
             this.scene.background = this.defaultOutdoorBg; // Set a fallback background
-            this.scene.fog = new THREE.Fog(this.defaultOutdoorBg, 40, 150); // Add default fog on error
             // Potentially show an error to the user
         } finally {
             this.hideLoading();
@@ -43,22 +39,16 @@ export class WorldManager {
     async loadNewArea(prompt, type = 'outdoor') {
          console.log(`Loading new area: ${prompt}, Type: ${type}`);
          this.showLoading();
-         this.clearCurrentRoom(); // Clears geometry, background, and fog
+         this.clearCurrentRoom();
 
          try {
             const newRoomData = await this.roomGenerator.generateRoomData(prompt, type);
-            this.buildRoom(newRoomData); // Builds geometry, sets background, and adds fog
+            this.buildRoom(newRoomData);
             this.addRoomToCollection(newRoomData);
          } catch (error) {
             console.error("Error generating new area:", error);
-             // Set a fallback background and fog based on intended type
-             if (type === 'indoor') {
-                 this.scene.background = this.defaultIndoorBg;
-                 this.scene.fog = new THREE.Fog(this.defaultIndoorBg, 10, 48);
-             } else {
-                 this.scene.background = this.defaultOutdoorBg;
-                 this.scene.fog = new THREE.Fog(this.defaultOutdoorBg, 40, 150);
-             }
+             // Set a fallback background based on intended type
+             this.scene.background = type === 'indoor' ? this.defaultIndoorBg : this.defaultOutdoorBg;
              // Handle error, maybe load a default error room?
          } finally {
             this.hideLoading();
@@ -69,22 +59,16 @@ export class WorldManager {
     buildRoom(roomData) {
         this.currentRoomObjects = new THREE.Group(); // Group for objects of this specific room
 
-        // Set background and fog
+        // Set background first
         if (roomData.type === 'outdoor') {
              if (roomData.textures.sky) {
                 // The texture should already have Equirectangular mapping set by RoomGenerator
                 this.scene.background = roomData.textures.sky;
-                // Attempt to use a neutral color close to sky blue for fog, or average color (complex)
-                // For now, stick to the default outdoor background color for fog consistency
-                this.scene.fog = new THREE.Fog(this.defaultOutdoorBg, 40, 150); // Fog starts at 40 units, fully dense at 150
              } else {
                 this.scene.background = this.defaultOutdoorBg; // Fallback blue sky
-                this.scene.fog = new THREE.Fog(this.defaultOutdoorBg, 40, 150); // Default fog
              }
         } else { // Indoor
             this.scene.background = this.defaultIndoorBg; // Dark background
-            // Indoor fog: starts closer, becomes dense faster to obscure walls
-            this.scene.fog = new THREE.Fog(this.defaultIndoorBg, 10, 48); // Fog starts at 10, full near tile edge (25)
         }
 
         // Floor
@@ -98,6 +82,7 @@ export class WorldManager {
         } else {
             console.warn("No floor texture available for room.");
         }
+
 
         // Walls & Ceiling (Indoor only)
         if (roomData.type === 'indoor') {
@@ -123,6 +108,7 @@ export class WorldManager {
                 console.warn("No wall texture available for indoor room.");
             }
 
+
             // Ceiling
             const ceilingGeometry = new THREE.PlaneGeometry(this.tileSize, this.tileSize);
             let ceilingMaterial;
@@ -137,7 +123,7 @@ export class WorldManager {
             ceilingMesh.position.y = wallHeight;
             this.currentRoomObjects.add(ceilingMesh);
 
-             // Adjust lighting/sky for indoor is handled by scene.background change and fog
+             // Adjust lighting/sky for indoor is handled by scene.background change
         }
 
         // Add the group of room objects to the main world group
@@ -178,7 +164,6 @@ export class WorldManager {
             this.scene.background.dispose();
          }
          this.scene.background = null; // Reset background
-         this.scene.fog = null; // Remove fog
     }
 
     showLoading() {
@@ -215,6 +200,7 @@ export class WorldManager {
          if (roomData.textures.wall) roomData.textures.wall.dispose();
          if (roomData.textures.ceiling) roomData.textures.ceiling.dispose();
          if (roomData.textures.sky) roomData.textures.sky.dispose();
+
 
         // Create serializable room record with texture URLs
         const roomRecord = {
@@ -264,6 +250,7 @@ export class WorldManager {
                  }
              });
 
+
             this.rooms = importedRooms;
              this.currentRoomIndex = -1; // Reset current room index as we don't know which one is active
 
@@ -292,7 +279,7 @@ export class WorldManager {
         }
 
         this.showLoading();
-        this.clearCurrentRoom(); // Clear existing geometry, background, and fog
+        this.clearCurrentRoom(); // Clear existing geometry and background
 
         try {
             const roomToLoad = this.rooms[index];
@@ -312,13 +299,14 @@ export class WorldManager {
                 textures: textures // Pass the loaded THREE.Texture objects
             };
 
-            this.buildRoom(roomData); // Build the room with loaded textures, background, and fog
+            this.buildRoom(roomData); // Build the room with loaded textures
             this.currentRoomIndex = index;
 
             // Reset player position (optional, maybe teleport to a specific entry point?)
              if (window.game && window.game.playerController) {
                  window.game.playerController.resetPosition(); // Add this method to PlayerController
              }
+
 
             // Update UI to reflect current room
             if (window.game && window.game.uiManager) {
@@ -329,14 +317,7 @@ export class WorldManager {
         } catch (error) {
             console.error("Error teleporting to room:", error);
             // Handle teleportation error - maybe load a default or show message
-             const fallbackType = this.rooms[index]?.type || 'outdoor'; // Guess type if possible
-             if (fallbackType === 'indoor') {
-                 this.scene.background = this.defaultIndoorBg;
-                 this.scene.fog = new THREE.Fog(this.defaultIndoorBg, 10, 48);
-             } else {
-                 this.scene.background = this.defaultOutdoorBg;
-                 this.scene.fog = new THREE.Fog(this.defaultOutdoorBg, 40, 150);
-             }
+             this.scene.background = this.defaultOutdoorBg; // Fallback background on error
              if (window.game && window.game.uiManager) {
                  window.game.uiManager.showNotification('Teleport failed: Error loading room data.', 'error');
              }
