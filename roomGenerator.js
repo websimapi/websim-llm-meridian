@@ -187,42 +187,75 @@ export class RoomGenerator {
     processSkyboxSeam(texture) {
         // Create a temporary canvas to process the skybox image
         const image = texture.image;
+        // Ensure the image is loaded and is a type that can be drawn to canvas
+        if (!(image instanceof HTMLImageElement || image instanceof HTMLCanvasElement || image instanceof ImageBitmap) || (image instanceof HTMLImageElement && !image.complete)) {
+             console.warn("Skybox texture image is not ready or not a processable type:", image);
+             // Optionally, retry later or skip processing for this texture
+             return;
+         }
+
         const canvas = document.createElement('canvas');
         canvas.width = image.width;
         canvas.height = image.height;
         const ctx = canvas.getContext('2d');
 
         // Draw the original image to the canvas
-        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+        try {
+            ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+        } catch (e) {
+            console.error("Error drawing skybox image to canvas:", e);
+            return; // Stop processing if drawing fails
+        }
 
-        // Create a gradient at the left and right edges to hide the seam
-        // Blend width relative to image width (40% as previously set)
+        // Blend width relative to image width (keep at 40% for a wide blend)
         const blendWidth = Math.floor(image.width * 0.40);
+        // Define a softer fog color (light grey) - adjust alpha for density
+        const fogColorOpaque = 'rgba(210, 210, 210, 1.0)'; // Opaque, light grey for dense fog feel
+        const fogColorTransparent = 'rgba(210, 210, 210, 0.0)'; // Fully transparent version
 
-        // Left edge gradient (seam start)
+        // --- Left edge gradient (seam start) ---
         const leftGradient = ctx.createLinearGradient(0, 0, blendWidth, 0);
-        // Make the fog fully opaque at the edge
-        leftGradient.addColorStop(0, 'rgba(255, 255, 255, 1.0)'); // Opaque white
-        leftGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Fully transparent
+        // Start opaque at the very edge
+        leftGradient.addColorStop(0, fogColorOpaque);
+        // Keep opaque for the first 20% of the blend width to ensure seam is covered
+        leftGradient.addColorStop(0.2, fogColorOpaque);
+        // Start fading out, becoming fully transparent at the end of the blend width
+        leftGradient.addColorStop(1, fogColorTransparent);
 
-        // Right edge gradient (seam end)
+        // --- Right edge gradient (seam end) ---
         const rightGradient = ctx.createLinearGradient(image.width, 0, image.width - blendWidth, 0);
-        // Make the fog fully opaque at the edge
-        rightGradient.addColorStop(0, 'rgba(255, 255, 255, 1.0)'); // Opaque white
-        rightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Fully transparent
+        // Start opaque at the very edge
+        rightGradient.addColorStop(0, fogColorOpaque);
+         // Keep opaque for the first 20% of the blend width
+        rightGradient.addColorStop(0.2, fogColorOpaque);
+        // Start fading out, becoming fully transparent at the start of the blend width (relative to right edge)
+        rightGradient.addColorStop(1, fogColorTransparent);
 
         // Apply the gradients over the existing image
-        // Use 'source-over' (default) blending which draws the gradient on top
+        // Composite operation 'source-over' (default) draws the gradient on top
         ctx.fillStyle = leftGradient;
         ctx.fillRect(0, 0, blendWidth, image.height);
 
         ctx.fillStyle = rightGradient;
         ctx.fillRect(image.width - blendWidth, 0, blendWidth, image.height);
 
-        // Update the texture with the processed canvas
-        texture.image = canvas;
-        texture.needsUpdate = true;
-        console.log(`Processed skybox seam with increased blend width: ${blendWidth}px (40%) and opaque fog`);
+        // Update the texture with the processed canvas data
+        // Create a new ImageBitmap from the canvas for potentially better performance
+        // Note: This is async, but Three.js handles ImageBitmap in texture.image fine.
+        // createImageBitmap(canvas).then(imageBitmap => {
+        //     texture.image = imageBitmap;
+        //     texture.needsUpdate = true;
+        //     console.log(`Processed skybox seam with softer grey fog (40% width, opaque near edge) using ImageBitmap`);
+        // }).catch(err => {
+        //     console.error("Failed to create ImageBitmap from canvas, falling back to canvas.", err);
+             texture.image = canvas; // Fallback to using canvas directly
+             texture.needsUpdate = true;
+             console.log(`Processed skybox seam with softer grey fog (40% width, opaque near edge) using Canvas`);
+        // });
+         // Simpler approach: Directly use canvas, Three.js will handle it.
+         texture.image = canvas;
+         texture.needsUpdate = true;
+         console.log(`Processed skybox seam with softer grey fog (40% width, opaque near edge) using Canvas`);
     }
 
     createPlaceholderTexture(color = '#FF00FF') { // Default to magenta for visibility
