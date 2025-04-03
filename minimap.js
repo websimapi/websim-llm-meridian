@@ -39,6 +39,7 @@ export class Minimap {
         this.playerDirectionLength = 10;
 
         this.floorTexture = null;
+        this.textureRepeat = new THREE.Vector2(1, 1); // Store texture repeat value
         this.patternNeedsUpdate = true;
         this.texturePattern = null;
 
@@ -73,11 +74,13 @@ export class Minimap {
 
     zoomIn() {
         this.mapScale = Math.min(this.maxZoom, this.mapScale * 1.2);
+        this.patternNeedsUpdate = true; // Pattern transform depends on scale
         console.log("Zoom In, new scale:", this.mapScale);
     }
 
     zoomOut() {
         this.mapScale = Math.max(this.minZoom, this.mapScale / 1.2);
+        this.patternNeedsUpdate = true; // Pattern transform depends on scale
         console.log("Zoom Out, new scale:", this.mapScale);
     }
 
@@ -96,42 +99,67 @@ export class Minimap {
             try {
                 const textureImage = this.floorTexture.image;
                 const tileSize = this.worldManager.tileSize;
-                const repeatX = this.floorTexture.repeat.x;
-                const repeatY = this.floorTexture.repeat.y;
 
                 // Check image dimensions before creating pattern
                 if (textureImage.width === 0 || textureImage.height === 0) {
-                    // Skip texture drawing if image has no dimensions yet (e.g., still loading)
                     console.warn("Minimap floor texture image has zero dimensions, skipping draw.");
                     this.texturePattern = null; // Ensure pattern is invalidated
-                } else if (!this.texturePattern || this.patternNeedsUpdate) {
-                    this.texturePattern = this.ctx.createPattern(textureImage, 'repeat');
-                    this.patternNeedsUpdate = false;
-                    console.log("Minimap pattern created/updated.");
+                } else {
+                    if (!this.texturePattern || this.patternNeedsUpdate) {
+                        // Recreate pattern if needed
+                        this.texturePattern = this.ctx.createPattern(textureImage, 'repeat');
+
+                        if (this.texturePattern) {
+                            // Calculate the scale needed for the pattern to match world units
+                            // One repetition of the texture covers (tileSize / repeat) world units.
+                            // This should correspond to textureImage.width pixels in the pattern source.
+                            // We want to scale the pattern so textureImage.width maps to the correct size *on the canvas*.
+                            // The size on canvas is (tileSize / repeat) * mapScale pixels.
+                            const patternScaleX = (tileSize / this.textureRepeat.x * this.mapScale) / textureImage.width;
+                            const patternScaleY = (tileSize / this.textureRepeat.y * this.mapScale) / textureImage.height;
+
+                            // Create an SVGMatrix for the transformation
+                            const matrix = new DOMMatrix();
+                            matrix.scaleSelf(patternScaleX, patternScaleY); // Apply scaling
+
+                            // Apply the transformation to the pattern
+                            this.texturePattern.setTransform(matrix);
+                            this.patternNeedsUpdate = false;
+                            console.log(`Minimap pattern created/updated. Texture repeats: ${this.textureRepeat.x},${this.textureRepeat.y}. Pattern scale: ${patternScaleX.toFixed(3)}, ${patternScaleY.toFixed(3)}`);
+                        } else {
+                             console.error("Failed to create canvas pattern.");
+                        }
+                    }
                 }
 
                 if (this.texturePattern) {
                     this.ctx.save();
+                    // Center the view on the player's position
                     this.ctx.translate(centerX, centerY);
-                    this.ctx.scale(this.mapScale, this.mapScale);
-                    this.ctx.translate(-playerPosition.x, -playerPosition.z);
+
+                    // --- IMPORTANT: Translate *before* scaling ---
+                    // We want the player's world coordinates (playerX, playerZ) to map to (0,0) in this translated space.
+                    this.ctx.translate(-playerPosition.x * this.mapScale, -playerPosition.z * this.mapScale);
 
                     this.ctx.fillStyle = this.texturePattern;
 
-                    // --- Simpler Pattern Alignment ---
-                    // Instead of complex matrix, translate the context *before* filling
-                    // This aligns the pattern's origin relative to the world space
-                    // Calculate offset based on texture repeat and tile size
-                    const texOffsetX = (0.5 * tileSize); // Adjust based on how texture maps to plane
-                    const texOffsetZ = (0.5 * tileSize);
-                    this.ctx.translate(-texOffsetX, -texOffsetZ); // Shift origin to match world corner
+                    // --- Pattern Alignment (Origin) ---
+                    // The pattern's origin (0,0) needs to align with the world's origin (0,0)
+                    // or more accurately, the corner of the floor plane (-tileSize/2, -tileSize/2).
+                    // Our current transform has player pos at the center. We need to shift the fill relative to this.
+                    const tileSize = this.worldManager.tileSize;
 
-                    // Fill a large rectangle centered around the player's view
-                    // This ensures the pattern covers the entire minimap area
-                    const drawSize = Math.max(this.minimapCanvas.width, this.minimapCanvas.height) / this.mapScale * 1.5; // Draw larger than needed
+                    // We translate the context fill origin to align the pattern correctly
+                    this.ctx.translate(-tileSize/2 * this.mapScale, -tileSize/2 * this.mapScale);
+
+                    // Fill a large rectangle covering the minimap area, adjusted for the translated origin
+                    const fillWidth = this.minimapCanvas.width;
+                    const fillHeight = this.minimapCanvas.height;
+                    const drawSize = Math.max(fillWidth, fillHeight) * 1.5; // Extra buffer
+
                     this.ctx.fillRect(
-                        playerPosition.x - drawSize / 2 + texOffsetX, // Center fill rect on player, adjusted by offset
-                        playerPosition.z - drawSize / 2 + texOffsetZ,
+                        -fillWidth/2 - drawSize/2 + tileSize/2 * this.mapScale, 
+                        -fillHeight/2 - drawSize/2 + tileSize/2 * this.mapScale,
                         drawSize,
                         drawSize
                     );
@@ -151,7 +179,7 @@ export class Minimap {
             this.drawFallbackBounds(playerPosition, centerX, centerY);
         }
 
-        // Draw Player Marker (always at the center)
+        // Draw Player Marker (always at the center of the canvas)
         this.ctx.fillStyle = '#4CAF50'; // Green marker
         this.ctx.beginPath();
         this.ctx.arc(centerX, centerY, this.playerMarkerSize, 0, Math.PI * 2);
@@ -174,16 +202,22 @@ export class Minimap {
         }
     }
 
-    // Helper to draw fallback room bounds
+    // Helper to draw fallback room bounds centered on player
     drawFallbackBounds(playerPosition, centerX, centerY, color = '#666') {
+        this.ctx.save();
         this.ctx.strokeStyle = color;
         this.ctx.lineWidth = 1;
-        const roomWidthOnMap = this.worldManager.tileSize * this.mapScale;
-        const roomDepthOnMap = this.worldManager.tileSize * this.mapScale;
-        // Calculate top-left corner based on centering the room relative to player position
-        const roomRectX = centerX - (playerPosition.x * this.mapScale) - roomWidthOnMap / 2;
-        const roomRectY = centerY - (playerPosition.z * this.mapScale) - roomDepthOnMap / 2;
-        this.ctx.strokeRect(roomRectX, roomRectY, roomWidthOnMap, roomDepthOnMap);
+
+        // Translate to center, scale, translate by negative player pos
+        this.ctx.translate(centerX, centerY);
+        this.ctx.scale(this.mapScale, this.mapScale);
+        this.ctx.translate(-playerPosition.x, -playerPosition.z);
+
+        // Draw the rectangle representing the tile centered at world origin (0,0)
+        const halfSize = this.worldManager.tileSize / 2;
+        this.ctx.strokeRect(-halfSize, -halfSize, this.worldManager.tileSize, this.worldManager.tileSize);
+
+        this.ctx.restore();
     }
 
     updateFloorTexture() {
@@ -193,12 +227,16 @@ export class Minimap {
                 this.patternNeedsUpdate = true;
                 this.floorTexture = null;
                 this.texturePattern = null; // Clear pattern too
+                this.textureRepeat.set(1, 1); // Reset repeat
             }
             return;
         }
 
         const floorMesh = worldManager.currentRoomObjects.children.find(
-            child => child instanceof THREE.Mesh && child.geometry instanceof THREE.PlaneGeometry && child.receiveShadow // Be more specific if needed
+            // Find the mesh used for the floor
+             child => child instanceof THREE.Mesh &&
+                      child.geometry instanceof THREE.PlaneGeometry &&
+                      child.rotation.x === -Math.PI / 2 // Check rotation to be sure it's the floor
         );
 
         const newTexture = floorMesh?.material?.map || null;
@@ -208,6 +246,14 @@ export class Minimap {
             this.floorTexture = newTexture;
             this.patternNeedsUpdate = true; // Signal that pattern needs recreation
             this.texturePattern = null; // Clear old pattern immediately
+
+            // Store the repeat value from the texture
+            if (this.floorTexture && this.floorTexture.repeat) {
+                this.textureRepeat.copy(this.floorTexture.repeat);
+                 console.log("Minimap updated texture repeat:", this.textureRepeat.x, this.textureRepeat.y);
+            } else {
+                this.textureRepeat.set(1, 1); // Default if no texture or repeat property
+            }
         }
     }
 }

@@ -94,6 +94,7 @@ export class WorldManager {
              this.currentRoomObjects.add(floorMesh);
         }
 
+
         // Walls & Ceiling (Indoor only)
         if (roomData.type === 'indoor') {
             const wallHeight = roomData.structure?.dimensions?.height || 4; 
@@ -140,6 +141,7 @@ export class WorldManager {
                      this.currentRoomObjects.add(wallMesh);
                  });
             }
+
 
             // Ceiling
             const ceilingGeometry = new THREE.PlaneGeometry(this.tileSize, this.tileSize);
