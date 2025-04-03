@@ -195,21 +195,25 @@ export class RoomGenerator {
         // Draw the original image to the canvas
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-        // Create a gradient at the left and right edges to hide the seam
-        // Blend width relative to image width (adjust percentage if needed)
-        const blendWidth = Math.floor(image.width * 0.05); // 5% of the width for blending
+        // Calculate blend width based on 45 degrees (1/8th of the width)
+        // Making it slightly larger than 12.5% to ensure good coverage
+        const blendWidth = Math.floor(image.width * 0.15); // ~54 degrees (15% width)
 
+        // Create a smoother, slightly stronger gradient for a 'foggy' blend
         // Left edge gradient (seam start)
         const leftGradient = ctx.createLinearGradient(0, 0, blendWidth, 0);
-        // Using a more subtle alpha blend
-        leftGradient.addColorStop(0, 'rgba(255, 255, 255, 0.5)'); // Semi-transparent white-ish overlay
-        leftGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Fully transparent
+        // Start with more opacity, fade out
+        leftGradient.addColorStop(0, 'rgba(255, 255, 255, 0.75)'); // More opaque start
+        leftGradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.4)'); // Middle point
+        leftGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');    // Fully transparent end
 
         // Right edge gradient (seam end)
         const rightGradient = ctx.createLinearGradient(image.width, 0, image.width - blendWidth, 0);
-        // Using a more subtle alpha blend
-        rightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.5)'); // Semi-transparent white-ish overlay
-        rightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Fully transparent
+        // Mirror the left gradient
+        rightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.75)'); // More opaque start
+        rightGradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.4)'); // Middle point
+        rightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');    // Fully transparent end
+
 
         // Apply the gradients over the existing image
         // Use 'source-over' (default) blending which draws the gradient on top
@@ -222,7 +226,7 @@ export class RoomGenerator {
         // Update the texture with the processed canvas
         texture.image = canvas;
         texture.needsUpdate = true;
-        console.log(`Processed skybox seam with blend width: ${blendWidth}px`);
+        console.log(`Processed skybox seam with increased 'fog' blend width: ${blendWidth}px`);
     }
 
     createPlaceholderTexture(color = '#FF00FF') { // Default to magenta for visibility
