@@ -12,8 +12,8 @@ renderer.setClearColor(0x87ceeb); // Sky blue for outdoor default
 
 // Game Components
 const worldManager = new WorldManager(scene);
-const playerController = new PlayerController(camera, scene, worldManager); // Pass worldManager for collision/interaction
 const uiManager = new UIManager();
+const playerController = new PlayerController(camera, scene, worldManager); // Pass worldManager for collision/interaction
 
 // Make core components accessible for debugging (optional, but helps with the current structure)
 window.game = {

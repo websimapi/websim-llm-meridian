@@ -11,6 +11,8 @@ export class WorldManager {
         this.scene.add(this.worldObjects);
         this.activeTiles = new Map(); // Store currently active world tiles/chunks
         this.tileSize = 20; // Size of each world tile/chunk
+        this.rooms = []; // Store all generated rooms data
+        this.currentRoomIndex = -1; // Track the currently active room
     }
 
     async generateInitialWorld() {
@@ -19,6 +21,7 @@ export class WorldManager {
         // For now, generate a simple starting room/area
         const initialRoomData = await this.roomGenerator.generateRoomData('A bright, grassy clearing in a fantasy forest, under a blue sky.', 'outdoor');
         this.buildRoom(initialRoomData);
+        this.addRoomToCollection(initialRoomData);
         this.hideLoading();
         console.log("Initial world generated.");
     }
@@ -31,6 +34,7 @@ export class WorldManager {
          try {
             const newRoomData = await this.roomGenerator.generateRoomData(prompt, type);
             this.buildRoom(newRoomData);
+            this.addRoomToCollection(newRoomData);
          } catch (error) {
             console.error("Error generating new area:", error);
              // Handle error, maybe load a default error room?
@@ -142,6 +146,124 @@ export class WorldManager {
         // For now, just a placeholder to test the loading mechanism via console
         // console.log(`Player at tile: ${currentTileX}, ${currentTileZ}`);
         // Example trigger: window.loadNewDebugRoom() in console
+    }
+
+    addRoomToCollection(roomData) {
+        // Create serializable room record with texture URLs
+        const roomRecord = {
+            id: Date.now(), // Unique identifier
+            name: `Room ${this.rooms.length + 1}`,
+            prompt: roomData.prompt,
+            type: roomData.type,
+            textureUrls: {
+                floor: roomData.textures.floor?.image?.src || null,
+                wall: roomData.textures.wall?.image?.src || null,
+                ceiling: roomData.textures.ceiling?.image?.src || null
+            },
+            timestamp: new Date().toISOString(),
+            structure: roomData.structure,
+            objects: roomData.objects
+        };
+        
+        this.rooms.push(roomRecord);
+        this.currentRoomIndex = this.rooms.length - 1;
+        
+        // Update UI with new room
+        if (window.game && window.game.uiManager) {
+            window.game.uiManager.updateRoomGallery(this.rooms, this.currentRoomIndex);
+        }
+    }
+
+    exportRoomsToJSON() {
+        const dataStr = JSON.stringify(this.rooms, null, 2);
+        const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+        
+        const exportFileDefaultName = `llm-meridian-rooms-${new Date().toISOString().slice(0,10)}.json`;
+        
+        const linkElement = document.createElement('a');
+        linkElement.setAttribute('href', dataUri);
+        linkElement.setAttribute('download', exportFileDefaultName);
+        linkElement.click();
+    }
+
+    async importRoomsFromJSON(jsonData) {
+        try {
+            const importedRooms = JSON.parse(jsonData);
+            if (!Array.isArray(importedRooms)) {
+                throw new Error("Invalid rooms data: expected an array");
+            }
+            
+            this.rooms = importedRooms;
+            
+            // Update UI with imported rooms
+            if (window.game && window.game.uiManager) {
+                window.game.uiManager.updateRoomGallery(this.rooms, -1);
+            }
+            
+            return true;
+        } catch (error) {
+            console.error("Failed to import rooms data:", error);
+            return false;
+        }
+    }
+
+    async teleportToRoom(index) {
+        if (index < 0 || index >= this.rooms.length) {
+            console.error("Invalid room index:", index);
+            return;
+        }
+        
+        this.showLoading();
+        this.clearCurrentRoom();
+        
+        try {
+            const roomToLoad = this.rooms[index];
+            
+            // Create textures from stored URLs
+            const textures = {
+                floor: roomToLoad.textureUrls.floor ? await this.loadTextureFromUrl(roomToLoad.textureUrls.floor) : null,
+                wall: roomToLoad.textureUrls.wall ? await this.loadTextureFromUrl(roomToLoad.textureUrls.wall) : null,
+                ceiling: roomToLoad.textureUrls.ceiling ? await this.loadTextureFromUrl(roomToLoad.textureUrls.ceiling) : null
+            };
+            
+            // Create room data with loaded textures
+            const roomData = {
+                ...roomToLoad,
+                textures: textures
+            };
+            
+            this.buildRoom(roomData);
+            this.currentRoomIndex = index;
+            
+            // Update UI to reflect current room
+            if (window.game && window.game.uiManager) {
+                window.game.uiManager.updateRoomGallery(this.rooms, this.currentRoomIndex);
+            }
+            
+        } catch (error) {
+            console.error("Error teleporting to room:", error);
+        } finally {
+            this.hideLoading();
+        }
+    }
+    
+    loadTextureFromUrl(url) {
+        return new Promise((resolve, reject) => {
+            const textureLoader = new THREE.TextureLoader();
+            textureLoader.load(
+                url,
+                (texture) => {
+                    texture.wrapS = THREE.RepeatWrapping;
+                    texture.wrapT = THREE.RepeatWrapping;
+                    const textureScale = 2;
+                    const repeatValue = this.tileSize / textureScale;
+                    texture.repeat.set(repeatValue, repeatValue);
+                    resolve(texture);
+                },
+                undefined,
+                (error) => reject(error)
+            );
+        });
     }
 
      // Debug function to trigger loading
