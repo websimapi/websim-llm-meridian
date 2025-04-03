@@ -91,9 +91,9 @@ export class UIManager {
         const debugButton = document.createElement('button');
         debugButton.textContent = 'New Outdoor Room (Debug)';
         debugButton.onclick = () => {
-            const prompt = prompt("Enter prompt for new outdoor room:", "A misty mountain path at dawn");
-            if (prompt) {
-                window.loadNewDebugRoom(prompt, 'outdoor');
+            const roomPrompt = window.prompt("Enter prompt for new outdoor room:", "A misty mountain path at dawn");
+            if (roomPrompt) {
+                window.loadNewDebugRoom(roomPrompt, 'outdoor');
             }
         };
         debugPanel.appendChild(debugButton);
@@ -101,9 +101,9 @@ export class UIManager {
         const debugButtonIndoor = document.createElement('button');
         debugButtonIndoor.textContent = 'New Indoor Room (Debug)';
         debugButtonIndoor.onclick = () => {
-            const prompt = prompt("Enter prompt for new indoor room:", "A cozy library with a fireplace");
-            if (prompt) {
-                window.loadNewDebugRoom(prompt, 'indoor');
+            const roomPrompt = window.prompt("Enter prompt for new indoor room:", "A cozy library with a fireplace");
+            if (roomPrompt) {
+                window.loadNewDebugRoom(roomPrompt, 'indoor');
             }
         };
         debugPanel.appendChild(debugButtonIndoor);

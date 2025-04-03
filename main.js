@@ -68,29 +68,6 @@ window.addEventListener('resize', () => {
     // Consider minimap resize if needed
 });
 
-// Cleanup function to stop animations when page is closed or navigated away
-window.addEventListener('beforeunload', () => {
-    if (window.game && window.game.scene) {
-        // Find all textures with animations and cancel them
-        window.game.scene.traverse((object) => {
-            if (object.material) {
-                const materials = Array.isArray(object.material) ? object.material : [object.material];
-                materials.forEach(material => {
-                    if (material.map && material.map.userData && material.map.userData.animationId) {
-                        cancelAnimationFrame(material.map.userData.animationId);
-                    }
-                });
-            }
-        });
-        // Also check scene background
-        if (window.game.scene.background && 
-            window.game.scene.background.userData && 
-            window.game.scene.background.userData.animationId) {
-            cancelAnimationFrame(window.game.scene.background.userData.animationId);
-        }
-    }
-});
-
 // Initial world generation
 worldManager.generateInitialWorld().then(() => {
     animate(); // Start the game loop after the initial world is ready
