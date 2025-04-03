@@ -289,7 +289,7 @@ export class RoomGenerator {
         
         // Store original image for redrawing
         texture.userData = texture.userData || {};
-        texture.userData.originalImage = image.cloneNode(true);
+        texture.userData.originalImage = texture.image.cloneNode(true);
         
         // Start animation loop
         texture.userData.animationId = requestAnimationFrame(animate);
