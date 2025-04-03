@@ -60,16 +60,15 @@ export class RoomGenerator {
             if (texturePrompt) {
                  const isSkybox = key === 'sky';
                 texturePromises.push(
-                    this.generateTexture(texturePrompt, key, isSkybox) // Pass key and skybox flag
+                    this.generateTexture(texturePrompt, key, isSkybox)
                         .then(texture => { textures[key] = texture; })
                         .catch(error => {
                             console.error(`Failed to generate ${key} texture with prompt "${texturePrompt}":`, error);
-                            // Use placeholder only for essential textures, sky can be null/default color
-                             if (key === 'floor' || (type === 'indoor' && key === 'wall')) {
-                                textures[key] = this.createPlaceholderTexture(key === 'floor' ? '#808080' : '#A0A0A0');
-                             } else {
-                                 textures[key] = null; // Allow sky/ceiling to fail gracefully
-                             }
+                            if (key === 'floor' || (type === 'indoor' && key === 'wall')) {
+                                textures[key] = this.createPlaceholderTexture(key === 'floor' ? '#808080' : '#A0A0A0', key);
+                            } else {
+                                textures[key] = null; // Allow sky/ceiling to fail gracefully
+                            }
                         })
                 );
             } else {
@@ -80,8 +79,8 @@ export class RoomGenerator {
         await Promise.all(texturePromises);
 
         // Ensure essential textures have placeholders if generation failed entirely
-        if (!textures.floor) textures.floor = this.createPlaceholderTexture('#808080'); // Grey floor
-        if (type === 'indoor' && materialData.wall && !textures.wall) textures.wall = this.createPlaceholderTexture('#A0A0A0'); // Lighter grey wall
+        if (!textures.floor) textures.floor = this.createPlaceholderTexture('#808080', 'floor'); // Grey floor
+        if (type === 'indoor' && materialData.wall && !textures.wall) textures.wall = this.createPlaceholderTexture('#A0A0A0', 'wall'); // Lighter grey wall
         // Sky and Ceiling remain null if not generated or applicable
 
         // 3. Generate Room Structure (Simplified for now)
@@ -122,49 +121,42 @@ export class RoomGenerator {
              };
 
             if (isSkybox) {
-                // Use higher resolution 2:1 aspect ratio for equirectangular images
-                imageOptions.width = 4096; // Increased resolution
-                imageOptions.height = 2048; // Increased resolution
+                imageOptions.width = 4096; 
+                imageOptions.height = 2048; 
                 console.log(`Requesting skybox with dimensions: ${imageOptions.width}x${imageOptions.height}`);
             } else {
-                // Square aspect ratio for seamless tiling textures
-                imageOptions.width = 512; // Power of 2 often good for textures
+                imageOptions.width = 512; 
                 imageOptions.height = 512;
             }
 
             const result = await websim.imageGen(imageOptions);
 
             if (result && result.url) {
-                // Load the generated image URL into a THREE.Texture
                 return new Promise((resolve, reject) => {
                     this.textureLoader.load(
                         result.url,
                         (texture) => {
                              if (isSkybox) {
                                  texture.mapping = THREE.EquirectangularReflectionMapping;
-                                 // Process skybox to hide seam line
-                                 this.processSkyboxSeam(texture);
-                                 // No repeat for skybox
+                                 texture.needsUpdate = true; 
                              } else {
                                 texture.wrapS = THREE.RepeatWrapping;
                                 texture.wrapT = THREE.RepeatWrapping;
-                                // Adjust repeat based on typical texture scale and tile size
-                                const textureScale = 2; // Assumed real-world size represented by the texture
-                                const repeatValue = 50 / textureScale; // Use tileSize (50)
+                                const textureScale = 2; 
+                                const repeatValue = 50 / textureScale; 
                                 texture.repeat.set(repeatValue, repeatValue);
                              }
                              console.log(`Successfully loaded ${context} texture for: "${prompt}"`);
                             resolve(texture);
                         },
-                        undefined, // onProgress callback currently not supported for imageGen
+                        undefined, 
                         (err) => {
                              console.error(`Error loading texture from URL ${result.url} for ${context}:`, err);
-                             // Resolve with placeholder on load error for essential textures
                              console.warn(`Falling back to placeholder texture for ${context} due to load error.`);
                               if (context === 'floor' || context === 'wall') {
-                                 resolve(this.createPlaceholderTexture());
+                                 resolve(this.createPlaceholderTexture(context === 'floor' ? '#808080' : '#A0A0A0', context));
                               } else {
-                                 resolve(null); // Allow sky/ceiling to fail to null
+                                 resolve(null); 
                               }
                         }
                     );
@@ -174,107 +166,29 @@ export class RoomGenerator {
             }
         } catch (error) {
              console.error(`websim.imageGen failed for prompt "${textureGenPrompt}" (context: ${context}):`, error);
-             // Return placeholder on generation error for essential textures
              console.warn(`Falling back to placeholder texture for ${context} due to image generation error.`);
              if (context === 'floor' || context === 'wall') {
-                 return this.createPlaceholderTexture();
+                 return this.createPlaceholderTexture(context === 'floor' ? '#808080' : '#A0A0A0', context);
              } else {
-                 return null; // Allow sky/ceiling to fail to null
+                 return null; 
              }
         }
     }
 
-    processSkyboxSeam(texture) {
-        // Create a temporary canvas to process the skybox image
-        const image = texture.image;
-        const canvas = document.createElement('canvas');
-        canvas.width = image.width;
-        canvas.height = image.height;
-        const ctx = canvas.getContext('2d');
-
-        // Draw the original image to the canvas
-        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-        // Create a gradient at the left and right edges to hide the seam
-        // Increased blend width from 5% to 12% of the image width for a more subtle transition
-        const blendWidth = Math.floor(image.width * 0.12);
-
-        // Left edge gradient (seam start)
-        const leftGradient = ctx.createLinearGradient(0, 0, blendWidth, 0);
-        // Using a more complex gradient with multiple stops for cloud-like effect
-        leftGradient.addColorStop(0, 'rgba(255, 255, 255, 0.7)');  // More opaque white
-        leftGradient.addColorStop(0.3, 'rgba(255, 255, 255, 0.5)'); // Semi-transparent
-        leftGradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.3)'); // Less transparent
-        leftGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');     // Fully transparent
-
-        // Right edge gradient (seam end)
-        const rightGradient = ctx.createLinearGradient(image.width, 0, image.width - blendWidth, 0);
-        // Matching complex gradient for right side
-        rightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.7)');  // More opaque white
-        rightGradient.addColorStop(0.3, 'rgba(255, 255, 255, 0.5)'); // Semi-transparent
-        rightGradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.3)'); // Less transparent
-        rightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');     // Fully transparent
-
-        // Apply the gradients over the existing image with cloud texture
-        // Use 'soft-light' blending mode for a more natural cloud-like effect
-        ctx.globalCompositeOperation = 'soft-light';
-        ctx.fillStyle = leftGradient;
-        ctx.fillRect(0, 0, blendWidth, image.height);
-
-        ctx.fillStyle = rightGradient;
-        ctx.fillRect(image.width - blendWidth, 0, blendWidth, image.height);
-
-        // Add some random cloud-like patterns for more natural transition
-        ctx.globalCompositeOperation = 'overlay';
-        
-        // Function to create random cloud-like shapes
-        const createCloudPattern = (x, width) => {
-            for (let i = 0; i < 10; i++) {
-                const cloudX = x + Math.random() * width;
-                const cloudY = Math.random() * image.height;
-                const cloudRadius = Math.random() * (width * 0.3) + (width * 0.1);
-                const cloudOpacity = Math.random() * 0.4 + 0.1;
-                
-                const cloudGradient = ctx.createRadialGradient(
-                    cloudX, cloudY, 0,
-                    cloudX, cloudY, cloudRadius
-                );
-                
-                cloudGradient.addColorStop(0, `rgba(255, 255, 255, ${cloudOpacity})`);
-                cloudGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-                
-                ctx.fillStyle = cloudGradient;
-                ctx.beginPath();
-                ctx.arc(cloudX, cloudY, cloudRadius, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        };
-        
-        // Create cloud patterns at both seam edges
-        createCloudPattern(0, blendWidth);
-        createCloudPattern(image.width - blendWidth, blendWidth);
-
-        // Update the texture with the processed canvas
-        texture.image = canvas;
-        texture.needsUpdate = true;
-        console.log(`Processed skybox seam with enhanced cloud effect, blend width: ${blendWidth}px`);
-    }
-
-    createPlaceholderTexture(color = '#FF00FF') { // Default to magenta for visibility
-        console.warn(`Creating placeholder texture with color ${color}.`);
+    createPlaceholderTexture(color = '#FF00FF', context = 'unknown') { 
+        console.warn(`Creating placeholder texture with color ${color} for ${context}.`);
         const canvas = document.createElement('canvas');
         canvas.width = 64;
         canvas.height = 64;
-        const context = canvas.getContext('2d');
+        const context2d = canvas.getContext('2d');
 
-        // Simple checkerboard pattern
-        context.fillStyle = color;
-        context.fillRect(0, 0, 64, 64);
-        context.fillStyle = 'rgba(0,0,0,0.2)'; // Slightly darker shade for contrast
+        context2d.fillStyle = color;
+        context2d.fillRect(0, 0, 64, 64);
+        context2d.fillStyle = 'rgba(0,0,0,0.2)'; 
         for (let i = 0; i < 4; i++) {
              for (let j = 0; j < 4; j++) {
                  if ((i + j) % 2 === 0) {
-                     context.fillRect(i * 16, j * 16, 16, 16);
+                     context2d.fillRect(i * 16, j * 16, 16, 16);
                  }
              }
          }
@@ -283,7 +197,7 @@ export class RoomGenerator {
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.RepeatWrapping;
         const textureScale = 2;
-        const repeatValue = 50 / textureScale; // Updated to match new tileSize of 50
+        const repeatValue = 50 / textureScale; 
         texture.repeat.set(repeatValue, repeatValue);
         return texture;
     }

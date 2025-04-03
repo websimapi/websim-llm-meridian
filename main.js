@@ -6,18 +6,18 @@ import { Minimap } from './minimap.js';
 
 // Basic Scene Setup
 const scene = new THREE.Scene();
-// Set far plane higher to ensure skybox is visible
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+// Set far plane higher to ensure skybox AND fog mesh are visible
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000); 
 const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game-canvas'), antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-// Background color will be managed by WorldManager
+// Ensure logarithmic depth buffer if needed for large distances, though maybe not required here yet.
+// renderer.logarithmicDepthBuffer = true; 
 
 // Game Components
-const worldManager = new WorldManager(scene);
+const worldManager = new WorldManager(scene); 
 const uiManager = new UIManager();
-// Pass worldManager for collision/interaction AND uiManager for potential notifications from player
 const playerController = new PlayerController(camera, scene, worldManager, uiManager);
-const minimap = new Minimap(worldManager); // Create the minimap
+const minimap = new Minimap(worldManager); 
 
 // Make core components accessible for debugging (optional, but helps with the current structure)
 window.game = {
@@ -33,7 +33,7 @@ window.game = {
 // Define the debug function here, where worldManager is in scope
 window.loadNewDebugRoom = async (prompt, type) => {
     if (window.game && window.game.worldManager) {
-        await window.game.worldManager.loadNewDebugRoom(prompt, type); // Use the instance directly
+        await window.game.worldManager.loadNewDebugRoom(prompt, type); 
     } else {
         console.error("WorldManager not found on window.game");
     }
@@ -41,8 +41,8 @@ window.loadNewDebugRoom = async (prompt, type) => {
 
 // Initial Setup
 // camera starting position set in PlayerController resetPosition/constructor
-scene.add(new THREE.AmbientLight(0x606060)); // Slightly brighter ambient light
-const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8); // Slightly brighter directional
+scene.add(new THREE.AmbientLight(0x606060)); 
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8); 
 directionalLight.position.set(5, 10, 7.5);
 scene.add(directionalLight);
 
@@ -50,12 +50,12 @@ scene.add(directionalLight);
 function animate() {
     requestAnimationFrame(animate);
 
-    const delta = window.game.playerController.clock.getDelta(); // Get delta from player controller's clock
+    const delta = window.game.playerController.clock.getDelta(); 
 
-    playerController.update(delta); // Pass delta time to player controller
-    // WorldManager update might not need delta if not doing time-based simulation
-    worldManager.update(playerController.getPlayerPosition()); // Update world based on player position
-    minimap.update(playerController.getPlayerPosition()); // Update minimap
+    playerController.update(delta); 
+    worldManager.update(playerController.getPlayerPosition()); 
+    worldManager.updateFog(delta); 
+    minimap.update(playerController.getPlayerPosition()); 
 
     renderer.render(scene, camera);
 }
@@ -70,7 +70,7 @@ window.addEventListener('resize', () => {
 
 // Initial world generation
 worldManager.generateInitialWorld().then(() => {
-    animate(); // Start the game loop after the initial world is ready
+    animate(); 
 }).catch(error => {
     console.error("Failed to generate initial world:", error);
     uiManager.showNotification("Error: Could not load initial world.", "error");
