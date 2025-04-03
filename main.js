@@ -46,6 +46,9 @@ const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8); // Slightly 
 directionalLight.position.set(5, 10, 7.5);
 scene.add(directionalLight);
 
+// --- Animation Settings ---
+const skyRotationSpeed = 0.003; // Slow rotation speed for the skybox
+
 // Game Loop
 function animate() {
     requestAnimationFrame(animate);
@@ -56,6 +59,21 @@ function animate() {
     // WorldManager update might not need delta if not doing time-based simulation
     worldManager.update(playerController.getPlayerPosition()); // Update world based on player position
     minimap.update(playerController.getPlayerPosition()); // Update minimap
+
+    // --- Sky Animation ---
+    const currentRoomIndex = worldManager.currentRoomIndex;
+    if (currentRoomIndex >= 0 && currentRoomIndex < worldManager.rooms.length) {
+        const currentRoom = worldManager.rooms[currentRoomIndex];
+        // Check if it's an outdoor scene and the background is a texture
+        if (currentRoom.type === 'outdoor' && scene.background instanceof THREE.Texture) {
+             // Animate the sky texture offset horizontally
+             scene.background.offset.x += skyRotationSpeed * delta;
+             // Keep the offset value between 0 and 1
+             scene.background.offset.x %= 1;
+             // Ensure the texture updates visually
+             scene.background.needsUpdate = true; // Usually not required for offset, but safe to include.
+        }
+    }
 
     renderer.render(scene, camera);
 }
