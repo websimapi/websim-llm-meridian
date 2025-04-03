@@ -4,7 +4,6 @@ export class RoomGenerator {
     constructor() {
         this.textureLoader = new THREE.TextureLoader();
         this.defaultTextureUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='; // 1x1 transparent png
-        this.tileSize = 50; // Assume a tile size for texture repeats
     }
 
     async generateRoomData(prompt, type = 'outdoor') {
@@ -143,13 +142,9 @@ export class RoomGenerator {
                         (texture) => {
                              if (isSkybox) {
                                  texture.mapping = THREE.EquirectangularReflectionMapping;
-                                 // Allow horizontal wrapping for animation
-                                 texture.wrapS = THREE.RepeatWrapping;
-                                 // Vertical wrapping usually doesn't matter for skyboxes, but set to Clamp to avoid potential issues at poles if offset.y was used
-                                 texture.wrapT = THREE.ClampToEdgeWrapping;
                                  // Process skybox to hide seam line
                                  this.processSkyboxSeam(texture);
-                                 // No repeat setting needed for skybox mapping
+                                 // No repeat for skybox
                              } else {
                                 texture.wrapS = THREE.RepeatWrapping;
                                 texture.wrapT = THREE.RepeatWrapping;
@@ -187,38 +182,6 @@ export class RoomGenerator {
                  return null; // Allow sky/ceiling to fail to null
              }
         }
-    }
-
-    loadTextureFromUrl(url, isSkybox = false) {
-        return new Promise((resolve, reject) => {
-            const textureLoader = new THREE.TextureLoader();
-            textureLoader.load(
-                url,
-                (texture) => {
-                     if (isSkybox) {
-                         texture.mapping = THREE.EquirectangularReflectionMapping;
-                         // Allow horizontal wrapping for animation
-                         texture.wrapS = THREE.RepeatWrapping;
-                         texture.wrapT = THREE.ClampToEdgeWrapping;
-                         // Note: Skybox seam processing isn't applied here on reload
-                         // Consider adding it if seams become visible on imported rooms
-                     } else {
-                        texture.wrapS = THREE.RepeatWrapping;
-                        texture.wrapT = THREE.RepeatWrapping;
-                        // Apply repeat based on tile size and assumed texture scale
-                        const textureScale = 2;
-                        const repeatValue = this.tileSize / textureScale;
-                        texture.repeat.set(repeatValue, repeatValue);
-                     }
-                    resolve(texture);
-                },
-                undefined, // onProgress
-                (error) => {
-                     console.error(`Failed to load texture from URL: ${url}`, error);
-                    reject(error); // Reject the promise on load failure
-                }
-            );
-        });
     }
 
     processSkyboxSeam(texture) {
@@ -277,10 +240,22 @@ export class RoomGenerator {
         ctx.fillRect(image.width - blendWidth, 0, blendWidth, image.height);
 
         // Update the texture with the processed canvas data
-        // Create a temporary canvas to process the skybox image
-        texture.image = canvas; // Directly use canvas
-        texture.needsUpdate = true;
-        console.log(`Processed skybox seam with softer grey fog (40% width, opaque near edge) using Canvas`);
+        // Create a new ImageBitmap from the canvas for potentially better performance
+        // Note: This is async, but Three.js handles ImageBitmap in texture.image fine.
+        // createImageBitmap(canvas).then(imageBitmap => {
+        //     texture.image = imageBitmap;
+        //     texture.needsUpdate = true;
+        //     console.log(`Processed skybox seam with softer grey fog (40% width, opaque near edge) using ImageBitmap`);
+        // }).catch(err => {
+        //     console.error("Failed to create ImageBitmap from canvas, falling back to canvas.", err);
+             texture.image = canvas; // Fallback to using canvas directly
+             texture.needsUpdate = true;
+             console.log(`Processed skybox seam with softer grey fog (40% width, opaque near edge) using Canvas`);
+        // });
+         // Simpler approach: Directly use canvas, Three.js will handle it.
+         texture.image = canvas;
+         texture.needsUpdate = true;
+         console.log(`Processed skybox seam with softer grey fog (40% width, opaque near edge) using Canvas`);
     }
 
     createPlaceholderTexture(color = '#FF00FF') { // Default to magenta for visibility

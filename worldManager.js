@@ -4,19 +4,18 @@ import { RoomGenerator } from './roomGenerator.js';
 export class WorldManager {
     constructor(scene) {
         this.scene = scene;
-        this.currentRoomObjects = null; // Keep track of meshes specific to the current room
+        this.currentRoomObjects = null;
         this.roomGenerator = new RoomGenerator();
         this.loadingScreen = document.getElementById('loading-screen');
-        this.worldObjects = new THREE.Group(); // Group to hold all world geometry/objects
+        this.worldObjects = new THREE.Group();
         this.scene.add(this.worldObjects);
-        this.activeTiles = new Map(); // Store currently active world tiles/chunks
+        this.activeTiles = new Map();
         this.tileSize = 50;
-        this.rooms = []; // Store all generated rooms data
-        this.currentRoomIndex = -1; // Track the currently active room
+        this.rooms = [];
+        this.currentRoomIndex = -1;
 
-        // Default background colors
-        this.defaultOutdoorBg = new THREE.Color(0x87ceeb); // Sky blue
-        this.defaultIndoorBg = new THREE.Color(0x111111); // Dark grey
+        this.defaultOutdoorBg = new THREE.Color(0x87ceeb);
+        this.defaultIndoorBg = new THREE.Color(0x111111);
     }
 
     async generateInitialWorld() {
@@ -28,8 +27,7 @@ export class WorldManager {
             this.addRoomToCollection(initialRoomData);
         } catch (error) {
             console.error("Failed to generate initial world:", error);
-            this.scene.background = this.defaultOutdoorBg; // Set a fallback background
-            // Potentially show an error to the user
+            this.scene.background = this.defaultOutdoorBg;
         } finally {
             this.hideLoading();
             console.log("Initial world generated.");
@@ -47,9 +45,7 @@ export class WorldManager {
             this.addRoomToCollection(newRoomData);
          } catch (error) {
             console.error("Error generating new area:", error);
-             // Set a fallback background based on intended type
              this.scene.background = type === 'indoor' ? this.defaultIndoorBg : this.defaultOutdoorBg;
-             // Handle error, maybe load a default error room?
          } finally {
             this.hideLoading();
             console.log("New area loaded.");
@@ -57,55 +53,93 @@ export class WorldManager {
     }
 
     buildRoom(roomData) {
-        this.currentRoomObjects = new THREE.Group(); // Group for objects of this specific room
+        this.currentRoomObjects = new THREE.Group();
 
-        // Set background first
+        // Set background
         if (roomData.type === 'outdoor') {
              if (roomData.textures.sky) {
-                // The texture should already have Equirectangular mapping set by RoomGenerator
                 this.scene.background = roomData.textures.sky;
+                this.scene.environment = roomData.textures.sky; 
              } else {
-                this.scene.background = this.defaultOutdoorBg; // Fallback blue sky
+                this.scene.background = this.defaultOutdoorBg;
+                this.scene.environment = null; 
              }
-        } else { // Indoor
-            this.scene.background = this.defaultIndoorBg; // Dark background
+        } else {
+            this.scene.background = this.defaultIndoorBg;
+            this.scene.environment = null; 
         }
 
         // Floor
         if (roomData.textures.floor) {
             const floorGeometry = new THREE.PlaneGeometry(this.tileSize, this.tileSize);
-            const floorMaterial = new THREE.MeshStandardMaterial({ map: roomData.textures.floor });
+            const floorMaterial = new THREE.MeshStandardMaterial({
+                map: roomData.textures.floor,
+                roughness: 0.8, 
+                metalness: 0.1
+            });
             const floorMesh = new THREE.Mesh(floorGeometry, floorMaterial);
             floorMesh.rotation.x = -Math.PI / 2;
             floorMesh.position.y = 0;
+            floorMesh.receiveShadow = true; 
             this.currentRoomObjects.add(floorMesh);
         } else {
             console.warn("No floor texture available for room.");
+             // Add placeholder floor that can receive shadows
+             const floorGeometry = new THREE.PlaneGeometry(this.tileSize, this.tileSize);
+             const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 1.0 });
+             const floorMesh = new THREE.Mesh(floorGeometry, floorMaterial);
+             floorMesh.rotation.x = -Math.PI / 2;
+             floorMesh.position.y = 0;
+             floorMesh.receiveShadow = true;
+             this.currentRoomObjects.add(floorMesh);
         }
 
 
         // Walls & Ceiling (Indoor only)
         if (roomData.type === 'indoor') {
-            const wallHeight = 4; // Use height from roomData.structure if available later
+            const wallHeight = roomData.structure?.dimensions?.height || 4; 
 
             // Walls
             if (roomData.textures.wall) {
-                const wallGeometry = new THREE.BoxGeometry(this.tileSize, wallHeight, 0.1); // Thin walls
-                const wallMaterial = new THREE.MeshStandardMaterial({ map: roomData.textures.wall });
+                const wallGeometry = new THREE.BoxGeometry(this.tileSize, wallHeight, 0.1);
+                const wallMaterial = new THREE.MeshStandardMaterial({
+                    map: roomData.textures.wall,
+                    roughness: 0.9,
+                    metalness: 0.1
+                });
                 const wallPositions = [
-                    { x: 0, y: wallHeight / 2, z: -this.tileSize / 2, rotY: 0 },         // Back
-                    { x: 0, y: wallHeight / 2, z: this.tileSize / 2, rotY: Math.PI },   // Front
-                    { x: -this.tileSize / 2, y: wallHeight / 2, z: 0, rotY: Math.PI / 2 }, // Left
-                    { x: this.tileSize / 2, y: wallHeight / 2, z: 0, rotY: -Math.PI / 2 } // Right
+                    { x: 0, y: wallHeight / 2, z: -this.tileSize / 2, rotY: 0 },
+                    { x: 0, y: wallHeight / 2, z: this.tileSize / 2, rotY: Math.PI },
+                    { x: -this.tileSize / 2, y: wallHeight / 2, z: 0, rotY: Math.PI / 2 },
+                    { x: this.tileSize / 2, y: wallHeight / 2, z: 0, rotY: -Math.PI / 2 }
                 ];
                 wallPositions.forEach(pos => {
-                    const wallMesh = new THREE.Mesh(wallGeometry.clone(), wallMaterial); // Clone geometry
+                    const wallMesh = new THREE.Mesh(wallGeometry.clone(), wallMaterial.clone()); 
                     wallMesh.position.set(pos.x, pos.y, pos.z);
                     wallMesh.rotation.y = pos.rotY;
+                    wallMesh.castShadow = true; 
+                    wallMesh.receiveShadow = true; 
                     this.currentRoomObjects.add(wallMesh);
                 });
             } else {
                 console.warn("No wall texture available for indoor room.");
+                 // Add placeholder walls
+                 const wallGeometry = new THREE.BoxGeometry(this.tileSize, wallHeight, 0.1);
+                 const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xA0A0A0, roughness: 1.0 });
+                 const wallPositions = [ 
+                    { x: 0, y: wallHeight / 2, z: -this.tileSize / 2, rotY: 0 },
+                    { x: 0, y: wallHeight / 2, z: this.tileSize / 2, rotY: Math.PI },
+                    { x: -this.tileSize / 2, y: wallHeight / 2, z: 0, rotY: Math.PI / 2 },
+                    { x: this.tileSize / 2, y: wallHeight / 2, z: 0, rotY: -Math.PI / 2 }
+                 ];
+                 wallPositions.forEach(pos => {
+                     const wallMesh = new THREE.Mesh(wallGeometry.clone(), wallMaterial.clone());
+                     wallMesh.position.set(pos.x, pos.y, pos.z);
+                     wallMesh.rotation.y = pos.rotY;
+                     wallMesh.castShadow = true;
+                     wallMesh.receiveShadow = true;
+                     this.currentRoomObjects.add(wallMesh);
+                 });
             }
 
 
@@ -113,57 +147,65 @@ export class WorldManager {
             const ceilingGeometry = new THREE.PlaneGeometry(this.tileSize, this.tileSize);
             let ceilingMaterial;
              if (roomData.textures.ceiling) {
-                 ceilingMaterial = new THREE.MeshStandardMaterial({ map: roomData.textures.ceiling, side: THREE.DoubleSide });
+                 ceilingMaterial = new THREE.MeshStandardMaterial({
+                    map: roomData.textures.ceiling,
+                    side: THREE.DoubleSide, 
+                    roughness: 0.9,
+                    metalness: 0.1
+                 });
              } else {
-                 // Default solid color if no texture provided
-                 ceilingMaterial = new THREE.MeshStandardMaterial({ color: 0x555555, side: THREE.DoubleSide });
+                 ceilingMaterial = new THREE.MeshStandardMaterial({
+                    color: 0x555555,
+                    side: THREE.DoubleSide,
+                    roughness: 1.0
+                 });
              }
             const ceilingMesh = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
             ceilingMesh.rotation.x = Math.PI / 2;
             ceilingMesh.position.y = wallHeight;
+            ceilingMesh.receiveShadow = true; 
             this.currentRoomObjects.add(ceilingMesh);
-
-             // Adjust lighting/sky for indoor is handled by scene.background change
         }
 
         // Add the group of room objects to the main world group
         this.worldObjects.add(this.currentRoomObjects);
 
-        // TODO: Implement more complex room structures based on roomData.structure
-        // TODO: Add objects based on roomData.objects
+        // Update minimap texture cache since room changed
+        if (window.game && window.game.minimap) {
+             window.game.minimap.floorTexture = null; 
+             window.game.minimap.patternNeedsUpdate = true;
+        }
     }
 
     clearCurrentRoom() {
          if (this.currentRoomObjects) {
-            // Dispose of geometry and materials to free memory
             this.currentRoomObjects.traverse(child => {
                 if (child instanceof THREE.Mesh) {
-                    if (child.geometry) child.geometry.dispose();
-                    if (child.material) {
-                        // Check if material is an array (though unlikely with current setup)
-                        if (Array.isArray(child.material)) {
-                            child.material.forEach(mat => {
-                                if (mat.map) mat.map.dispose();
-                                mat.dispose();
-                            });
-                        } else {
-                            // Dispose texture map if it exists
-                            if (child.material.map) child.material.map.dispose();
-                            child.material.dispose(); // Dispose the material itself
-                        }
+                    child.geometry?.dispose();
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(mat => {
+                            mat.map?.dispose();
+                            mat.dispose();
+                        });
+                    } else if (child.material) {
+                        child.material.map?.dispose();
+                        child.material.dispose();
                     }
                 }
             });
-            // Remove the group from the world and clear its children
             this.worldObjects.remove(this.currentRoomObjects);
-            this.currentRoomObjects.clear(); // Ensure all children are removed from the group
+            this.currentRoomObjects.clear();
             this.currentRoomObjects = null;
         }
-         // Also clear the background texture
+         // Also clear the background texture and environment map
          if (this.scene.background instanceof THREE.Texture) {
             this.scene.background.dispose();
          }
-         this.scene.background = null; // Reset background
+         if (this.scene.environment instanceof THREE.Texture) {
+            this.scene.environment.dispose();
+         }
+         this.scene.background = null;
+         this.scene.environment = null;
     }
 
     showLoading() {
@@ -175,10 +217,7 @@ export class WorldManager {
     }
 
     update(playerPosition) {
-        // Placeholder for logic to trigger loading new areas when player moves
-        // Example: Check if player is near the edge of the current tile/room
-        const currentTileX = Math.floor(playerPosition.x / this.tileSize);
-        const currentTileZ = Math.floor(playerPosition.z / this.tileSize);
+        // Existing logic...
 
         // Update minimap if it exists
         if (window.game && window.game.minimap) {
@@ -187,28 +226,30 @@ export class WorldManager {
     }
 
     addRoomToCollection(roomData) {
-         // Dispose of textures after adding their URLs to the record
-         // This prevents holding onto large textures in memory for non-active rooms
+         // Dispose textures immediately after getting URLs, EXCEPT skybox if used for environment
          const textureUrls = {
              floor: roomData.textures.floor?.image?.src || null,
              wall: roomData.textures.wall?.image?.src || null,
              ceiling: roomData.textures.ceiling?.image?.src || null,
-             sky: roomData.textures.sky?.image?.src || null // Store skybox URL
+             sky: roomData.textures.sky?.image?.src || null
          };
 
          if (roomData.textures.floor) roomData.textures.floor.dispose();
          if (roomData.textures.wall) roomData.textures.wall.dispose();
          if (roomData.textures.ceiling) roomData.textures.ceiling.dispose();
-         if (roomData.textures.sky) roomData.textures.sky.dispose();
+         // Keep sky texture if it's currently set as scene background/environment
+         // It will be disposed during clearCurrentRoom or when a new sky is loaded
+         // if (roomData.textures.sky && this.scene.background !== roomData.textures.sky) {
+         //     roomData.textures.sky.dispose();
+         // }
 
 
-        // Create serializable room record with texture URLs
         const roomRecord = {
-            id: Date.now() + Math.random(), // Unique identifier
-            name: `Room ${this.rooms.length + 1}`, // Simple naming
+            id: Date.now() + Math.random(),
+            name: `Room ${this.rooms.length + 1}`,
             prompt: roomData.prompt,
             type: roomData.type,
-            textureUrls: textureUrls, // Use the stored URLs
+            textureUrls: textureUrls,
             timestamp: new Date().toISOString(),
             structure: roomData.structure,
             objects: roomData.objects
@@ -217,7 +258,6 @@ export class WorldManager {
         this.rooms.push(roomRecord);
         this.currentRoomIndex = this.rooms.length - 1;
 
-        // Update UI with new room
         if (window.game && window.game.uiManager) {
             window.game.uiManager.updateRoomGallery(this.rooms, this.currentRoomIndex);
         }
@@ -252,7 +292,7 @@ export class WorldManager {
 
 
             this.rooms = importedRooms;
-             this.currentRoomIndex = -1; // Reset current room index as we don't know which one is active
+             this.currentRoomIndex = -1; 
 
             // Update UI with imported rooms
             if (window.game && window.game.uiManager) {
@@ -279,7 +319,7 @@ export class WorldManager {
         }
 
         this.showLoading();
-        this.clearCurrentRoom(); // Clear existing geometry and background
+        this.clearCurrentRoom(); 
 
         try {
             const roomToLoad = this.rooms[index];
@@ -290,25 +330,21 @@ export class WorldManager {
                  floor: roomToLoad.textureUrls.floor ? await this.loadTextureFromUrl(roomToLoad.textureUrls.floor, false) : null,
                  wall: roomToLoad.textureUrls.wall ? await this.loadTextureFromUrl(roomToLoad.textureUrls.wall, false) : null,
                  ceiling: roomToLoad.textureUrls.ceiling ? await this.loadTextureFromUrl(roomToLoad.textureUrls.ceiling, false) : null,
-                 sky: roomToLoad.textureUrls.sky ? await this.loadTextureFromUrl(roomToLoad.textureUrls.sky, true) : null // Load skybox if URL exists
+                 sky: roomToLoad.textureUrls.sky ? await this.loadTextureFromUrl(roomToLoad.textureUrls.sky, true) : null 
             };
 
-            // Create room data structure expected by buildRoom
             const roomData = {
-                ...roomToLoad, // Includes prompt, type, structure, objects
-                textures: textures // Pass the loaded THREE.Texture objects
+                ...roomToLoad,
+                textures: textures
             };
 
-            this.buildRoom(roomData); // Build the room with loaded textures
+            this.buildRoom(roomData);
             this.currentRoomIndex = index;
 
-            // Reset player position (optional, maybe teleport to a specific entry point?)
              if (window.game && window.game.playerController) {
-                 window.game.playerController.resetPosition(); // Add this method to PlayerController
+                 window.game.playerController.resetPosition(); 
              }
 
-
-            // Update UI to reflect current room
             if (window.game && window.game.uiManager) {
                 window.game.uiManager.updateRoomGallery(this.rooms, this.currentRoomIndex);
                  window.game.uiManager.showNotification(`Teleported to ${roomToLoad.name}.`);
@@ -316,8 +352,8 @@ export class WorldManager {
 
         } catch (error) {
             console.error("Error teleporting to room:", error);
-            // Handle teleportation error - maybe load a default or show message
-             this.scene.background = this.defaultOutdoorBg; // Fallback background on error
+             this.scene.background = this.defaultOutdoorBg;
+             this.scene.environment = null;
              if (window.game && window.game.uiManager) {
                  window.game.uiManager.showNotification('Teleport failed: Error loading room data.', 'error');
              }
@@ -332,30 +368,31 @@ export class WorldManager {
             textureLoader.load(
                 url,
                 (texture) => {
+                     texture.colorSpace = THREE.SRGBColorSpace; 
                      if (isSkybox) {
                          texture.mapping = THREE.EquirectangularReflectionMapping;
+                         // Consider processing seam if needed here too
+                         // if (window.game?.roomGenerator) window.game.roomGenerator.processSkyboxSeam(texture);
                          // No wrapping or repeat for skybox
                      } else {
                         texture.wrapS = THREE.RepeatWrapping;
                         texture.wrapT = THREE.RepeatWrapping;
-                        // Apply repeat based on tile size and assumed texture scale
                         const textureScale = 2;
                         const repeatValue = this.tileSize / textureScale;
                         texture.repeat.set(repeatValue, repeatValue);
                      }
                     resolve(texture);
                 },
-                undefined, // onProgress
+                undefined,
                 (error) => {
                      console.error(`Failed to load texture from URL: ${url}`, error);
-                    reject(error); // Reject the promise on load failure
+                    reject(error);
                 }
             );
         });
     }
 
-     // Debug function to trigger loading
-    async loadNewDebugRoom(prompt, type = 'outdoor') {
+     async loadNewDebugRoom(prompt, type = 'outdoor') {
         await this.loadNewArea(prompt, type);
     }
 }

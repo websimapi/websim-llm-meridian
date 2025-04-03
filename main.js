@@ -6,20 +6,31 @@ import { Minimap } from './minimap.js';
 
 // Basic Scene Setup
 const scene = new THREE.Scene();
-// Set far plane higher to ensure skybox is visible
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
-const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game-canvas'), antialias: true });
+const renderer = new THREE.WebGLRenderer({
+    canvas: document.getElementById('game-canvas'),
+    antialias: true // Enable antialiasing for smoother edges
+});
 renderer.setSize(window.innerWidth, window.innerHeight);
-// Background color will be managed by WorldManager
+renderer.setPixelRatio(window.devicePixelRatio); // Use device pixel ratio for sharper rendering
+
+// Enable Shadow Mapping
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadows
+
+// Tone mapping for more realistic lighting
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace; // Correct color space
+
 
 // Game Components
 const worldManager = new WorldManager(scene);
 const uiManager = new UIManager();
-// Pass worldManager for collision/interaction AND uiManager for potential notifications from player
 const playerController = new PlayerController(camera, scene, worldManager, uiManager);
 const minimap = new Minimap(worldManager); // Create the minimap
 
-// Make core components accessible for debugging (optional, but helps with the current structure)
+// Make core components accessible for debugging
 window.game = {
     scene,
     camera,
@@ -30,50 +41,66 @@ window.game = {
     minimap
 };
 
-// Define the debug function here, where worldManager is in scope
 window.loadNewDebugRoom = async (prompt, type) => {
     if (window.game && window.game.worldManager) {
-        await window.game.worldManager.loadNewDebugRoom(prompt, type); // Use the instance directly
+        await window.game.worldManager.loadNewDebugRoom(prompt, type);
     } else {
         console.error("WorldManager not found on window.game");
     }
 };
 
-// Initial Setup
-// camera starting position set in PlayerController resetPosition/constructor
-scene.add(new THREE.AmbientLight(0x606060)); // Slightly brighter ambient light
-const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8); // Slightly brighter directional
-directionalLight.position.set(5, 10, 7.5);
-scene.add(directionalLight);
+// Improved Lighting Setup
+scene.add(new THREE.AmbientLight(0x606080, 0.6)); // Slightly blueish ambient light, lower intensity
 
-// --- Animation Settings ---
-const skyRotationSpeed = 0.003; // Slow rotation speed for the skybox
+const hemiLight = new THREE.HemisphereLight(0xB1E1FF, 0xB97A20, 0.8); // Sky color, Ground color, Intensity
+hemiLight.position.set(0, 50, 0);
+scene.add(hemiLight);
+
+const mainLight = new THREE.DirectionalLight(0xffffff, 1.5); // Brighter main light
+mainLight.position.set(15, 30, 20); // Positioned higher and angled
+mainLight.castShadow = true; // Enable shadows for this light
+scene.add(mainLight);
+scene.add(mainLight.target); // Required for directional light shadows
+
+// Configure Shadow Properties
+mainLight.shadow.mapSize.width = 2048; // Higher resolution shadows
+mainLight.shadow.mapSize.height = 2048;
+mainLight.shadow.camera.near = 0.5;
+mainLight.shadow.camera.far = 500;
+// Define the area covered by the shadow camera
+const shadowCamSize = worldManager.tileSize * 0.75; // Cover slightly larger than the room
+mainLight.shadow.camera.left = -shadowCamSize;
+mainLight.shadow.camera.right = shadowCamSize;
+mainLight.shadow.camera.top = shadowCamSize;
+mainLight.shadow.camera.bottom = -shadowCamSize;
+mainLight.shadow.bias = -0.0005; // Adjust bias to prevent shadow acne
+
+// Add a helper for the shadow camera (optional, for debugging)
+// const shadowCamHelper = new THREE.CameraHelper(mainLight.shadow.camera);
+// scene.add(shadowCamHelper);
+
+
+// Initial Setup
+// Load player model (async) - call after player controller is initialized
+playerController.loadPlayerModel('/path/to/your/first-person-rig.gltf') 
+    .then(() => console.log("Player model loaded (or placeholder created)."))
+    .catch(err => console.error("Failed to load player model:", err));
 
 // Game Loop
 function animate() {
     requestAnimationFrame(animate);
 
-    const delta = window.game.playerController.clock.getDelta(); // Get delta from player controller's clock
+    const delta = window.game.playerController.clock.getDelta();
 
-    playerController.update(delta); // Pass delta time to player controller
-    // WorldManager update might not need delta if not doing time-based simulation
-    worldManager.update(playerController.getPlayerPosition()); // Update world based on player position
-    minimap.update(playerController.getPlayerPosition()); // Update minimap
+    playerController.update(delta);
+    worldManager.update(playerController.getPlayerPosition());
+    minimap.update(playerController.getPlayerPosition());
 
-    // --- Sky Animation ---
-    const currentRoomIndex = worldManager.currentRoomIndex;
-    if (currentRoomIndex >= 0 && currentRoomIndex < worldManager.rooms.length) {
-        const currentRoom = worldManager.rooms[currentRoomIndex];
-        // Check if it's an outdoor scene and the background is a texture
-        if (currentRoom.type === 'outdoor' && scene.background instanceof THREE.Texture) {
-             // Animate the sky texture offset horizontally
-             scene.background.offset.x += skyRotationSpeed * delta;
-             // Keep the offset value between 0 and 1
-             scene.background.offset.x %= 1;
-             // Ensure the texture updates visually
-             scene.background.needsUpdate = true; // Usually not required for offset, but safe to include.
-        }
-    }
+    // Update lighting target (e.g., make it follow the player slightly)
+    const playerPos = playerController.getPlayerPosition();
+    mainLight.target.position.set(playerPos.x, 0, playerPos.z); // Target the ground near the player
+    mainLight.target.updateMatrixWorld(); // Important after moving the target
+
 
     renderer.render(scene, camera);
 }
@@ -83,18 +110,17 @@ window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
-    // Consider minimap resize if needed
+    minimap.updateCanvasSize(); // Notify minimap of potential resize
 });
 
 // Initial world generation
 worldManager.generateInitialWorld().then(() => {
-    animate(); // Start the game loop after the initial world is ready
+    animate(); // Start the game loop
 }).catch(error => {
     console.error("Failed to generate initial world:", error);
     uiManager.showNotification("Error: Could not load initial world.", "error");
-    // Handle error appropriately, maybe show a static error message or fallback scene
 });
 
 // Add debug axes (optional)
 // const axesHelper = new THREE.AxesHelper( 5 );
-// scene.add( axesHelper );
+// scene.add(axesHelper );
