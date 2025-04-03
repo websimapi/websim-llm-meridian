@@ -44,12 +44,12 @@ export class RoomGenerator {
 
         // 2. Generate Textures using derived materials
         const texturePrompts = {
-            floor: `Seamless tiling texture pattern, game asset style, ${materialData.floor}`,
-            wall: type === 'indoor' && materialData.wall ? `Seamless tiling texture pattern, game asset style, ${materialData.wall}` : null,
-            ceiling: type === 'indoor' && materialData.ceiling ? `Seamless tiling texture pattern, game asset style, ${materialData.ceiling}` : null,
+            floor: `Seamless tiling texture pattern, game asset style, high detail, ${materialData.floor}`, 
+            wall: type === 'indoor' && materialData.wall ? `Seamless tiling texture pattern, game asset style, high detail, ${materialData.wall}` : null, 
+            ceiling: type === 'indoor' && materialData.ceiling ? `Seamless tiling texture pattern, game asset style, high detail, ${materialData.ceiling}` : null, 
             // Enhanced Skybox Prompt
             sky: type === 'outdoor' && materialData.sky
-                ? `High-resolution 360-degree equirectangular panorama, photorealistic style, game environment background, ultra-detailed, immersive view. Scene description: ${materialData.sky}. Ensure seamless wrapping.`
+                ? `Ultra-high resolution 360-degree equirectangular panorama, photorealistic style, game environment background, cinematic lighting, hyper-detailed, immersive view. Scene description: ${materialData.sky}. Ensure seamless wrapping.` 
                 : null,
         };
 
@@ -122,14 +122,15 @@ export class RoomGenerator {
              };
 
             if (isSkybox) {
-                // Use higher resolution 2:1 aspect ratio for equirectangular images
-                imageOptions.width = 4096; // Increased resolution
-                imageOptions.height = 2048; // Increased resolution
-                console.log(`Requesting skybox with dimensions: ${imageOptions.width}x${imageOptions.height}`);
+                // Use highest possible resolution 2:1 aspect ratio for equirectangular images
+                imageOptions.width = 8192;
+                imageOptions.height = 4096;
+                console.log(`Requesting MAXIMUM resolution skybox with dimensions: ${imageOptions.width}x${imageOptions.height}`);
             } else {
-                // Square aspect ratio for seamless tiling textures
-                imageOptions.width = 512; // Power of 2 often good for textures
-                imageOptions.height = 512;
+                // Increase resolution for tiling textures as well, e.g., 1024x1024 or 2048x2048
+                imageOptions.width = 1024; // Increased resolution for floor/wall/ceiling
+                imageOptions.height = 1024;
+                console.log(`Requesting high resolution tiling texture: ${imageOptions.width}x${imageOptions.height}`);
             }
 
             const result = await websim.imageGen(imageOptions);
@@ -143,6 +144,7 @@ export class RoomGenerator {
                              if (isSkybox) {
                                  texture.mapping = THREE.EquirectangularReflectionMapping;
                                  // Process skybox to hide seam line
+                                 console.log("Processing seam for high-resolution skybox...");
                                  this.processSkyboxSeam(texture);
                                  // No repeat for skybox
                              } else {
@@ -191,6 +193,14 @@ export class RoomGenerator {
         if (!(image instanceof HTMLImageElement || image instanceof HTMLCanvasElement || image instanceof ImageBitmap) || (image instanceof HTMLImageElement && !image.complete)) {
              console.warn("Skybox texture image is not ready or not a processable type:", image);
              // Optionally, retry later or skip processing for this texture
+             setTimeout(() => {
+                 if (image.complete) {
+                    console.log("Retrying skybox seam processing after delay...");
+                    this.processSkyboxSeam(texture);
+                 } else {
+                    console.error("Skybox image still not ready after delay.");
+                 }
+             }, 500);
              return;
          }
 
@@ -240,19 +250,6 @@ export class RoomGenerator {
         ctx.fillRect(image.width - blendWidth, 0, blendWidth, image.height);
 
         // Update the texture with the processed canvas data
-        // Create a new ImageBitmap from the canvas for potentially better performance
-        // Note: This is async, but Three.js handles ImageBitmap in texture.image fine.
-        // createImageBitmap(canvas).then(imageBitmap => {
-        //     texture.image = imageBitmap;
-        //     texture.needsUpdate = true;
-        //     console.log(`Processed skybox seam with softer grey fog (40% width, opaque near edge) using ImageBitmap`);
-        // }).catch(err => {
-        //     console.error("Failed to create ImageBitmap from canvas, falling back to canvas.", err);
-             texture.image = canvas; // Fallback to using canvas directly
-             texture.needsUpdate = true;
-             console.log(`Processed skybox seam with softer grey fog (40% width, opaque near edge) using Canvas`);
-        // });
-         // Simpler approach: Directly use canvas, Three.js will handle it.
          texture.image = canvas;
          texture.needsUpdate = true;
          console.log(`Processed skybox seam with softer grey fog (40% width, opaque near edge) using Canvas`);
