@@ -133,7 +133,7 @@ export class UIManager {
         this.roomGalleryVisible = !this.roomGalleryVisible;
         
         if (this.roomGalleryVisible) {
-            galleryContainer.style.display = 'block';
+            galleryContainer.style.display = 'flex';
             // Update gallery content if worldManager is available
             if (window.game && window.game.worldManager) {
                 this.updateRoomGallery(
