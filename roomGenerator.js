@@ -193,28 +193,106 @@ export class RoomGenerator {
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
         
         // Create a gradient at the left and right edges to hide the seam
-        const blendWidth = Math.floor(image.width * 0.05); // 5% of the width for blending
+        const blendWidth = Math.floor(image.width * 0.08); // Increased from 5% to 8% for wider blend
         
-        // Left edge gradient (seam start)
-        const leftGradient = ctx.createLinearGradient(0, 0, blendWidth, 0);
-        leftGradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)'); // Cloudy white
-        leftGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Transparent
+        // Create animated fog effect
+        const fogCanvas = document.createElement('canvas');
+        fogCanvas.width = blendWidth;
+        fogCanvas.height = image.height;
+        const fogCtx = fogCanvas.getContext('2d');
         
-        // Right edge gradient (seam end)
-        const rightGradient = ctx.createLinearGradient(image.width, 0, image.width - blendWidth, 0);
-        rightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)'); // Cloudy white
-        rightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Transparent
+        // Draw initial fog pattern
+        this.drawFogPattern(fogCtx, blendWidth, image.height);
         
-        // Apply the gradients
-        ctx.fillStyle = leftGradient;
-        ctx.fillRect(0, 0, blendWidth, image.height);
+        // Apply fog to left edge
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.drawImage(fogCanvas, 0, 0);
         
-        ctx.fillStyle = rightGradient;
-        ctx.fillRect(image.width - blendWidth, 0, blendWidth, image.height);
+        // Apply fog to right edge (flipped)
+        ctx.save();
+        ctx.translate(image.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(fogCanvas, 0, 0);
+        ctx.restore();
+        
+        // Start animation for fog
+        this.animateFog(texture, canvas, ctx, fogCanvas, fogCtx, blendWidth, image.height);
         
         // Update the texture with the processed canvas
         texture.image = canvas;
         texture.needsUpdate = true;
+    }
+    
+    drawFogPattern(ctx, width, height) {
+        ctx.clearRect(0, 0, width, height);
+        
+        // Create gradient base
+        const gradient = ctx.createLinearGradient(0, 0, width, 0);
+        gradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)'); // Denser white fog
+        gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Transparent
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+        
+        // Add some random cloud patterns for texture
+        for (let i = 0; i < 20; i++) {
+            const x = Math.random() * width * 0.8;
+            const y = Math.random() * height;
+            const r = Math.random() * width * 0.2 + width * 0.05;
+            const alpha = Math.random() * 0.3 + 0.1;
+            
+            const cloudGradient = ctx.createRadialGradient(x, y, 0, x, y, r);
+            cloudGradient.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+            cloudGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            
+            ctx.fillStyle = cloudGradient;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+    
+    animateFog(texture, canvas, ctx, fogCanvas, fogCtx, width, height) {
+        let frameCount = 0;
+        const imageWidth = canvas.width;
+        const imageHeight = canvas.height;
+        
+        const animate = () => {
+            if (!texture.isTexture) return; // Stop if texture is disposed
+            
+            frameCount++;
+            if (frameCount % 3 === 0) { // Only update every 3 frames for performance
+                // Redraw the original image
+                ctx.drawImage(texture.userData.originalImage, 0, 0, imageWidth, imageHeight);
+                
+                // Generate new fog pattern
+                this.drawFogPattern(fogCtx, width, height);
+                
+                // Apply new fog to left edge with slight vertical offset based on time
+                const offset = Math.sin(Date.now() / 2000) * height * 0.05;
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.drawImage(fogCanvas, 0, offset);
+                
+                // Apply fog to right edge (flipped)
+                ctx.save();
+                ctx.translate(imageWidth, 0);
+                ctx.scale(-1, 1);
+                ctx.drawImage(fogCanvas, 0, -offset);
+                ctx.restore();
+                
+                // Update texture
+                texture.needsUpdate = true;
+            }
+            
+            // Continue animation
+            texture.userData.animationId = requestAnimationFrame(animate);
+        };
+        
+        // Store original image for redrawing
+        texture.userData = texture.userData || {};
+        texture.userData.originalImage = image.cloneNode(true);
+        
+        // Start animation loop
+        texture.userData.animationId = requestAnimationFrame(animate);
     }
 
     createPlaceholderTexture(color = '#FF00FF') { // Default to magenta for visibility
