@@ -75,10 +75,12 @@ export class RoomGenerator {
 
     async generateTexture(prompt) {
         console.log(`Generating texture for prompt: "${prompt}"`);
+        // Construct a prompt emphasizing the seamless tiling requirement
+        const textureGenPrompt = `Seamless tiling game texture, photorealistic style, for: ${prompt}`;
         try {
             // Use a square aspect ratio for seamless textures
             const result = await websim.imageGen({
-                prompt: prompt + ", photorealistic, game texture, seamless tiling",
+                prompt: textureGenPrompt,
                  width: 512, // Power of 2 often good for textures
                  height: 512,
                 // seed: Date.now() // Optional: use seed for reproducibility if needed
@@ -99,7 +101,9 @@ export class RoomGenerator {
                         undefined, // onProgress callback currently not supported for imageGen
                         (err) => {
                              console.error(`Error loading texture from URL ${result.url}:`, err);
-                             reject(err); // Reject the promise on texture load error
+                             // Resolve with placeholder on load error to prevent breaking the build process
+                             console.warn("Falling back to placeholder texture due to load error.");
+                             resolve(this.createPlaceholderTexture());
                         }
                     );
                 });
@@ -107,8 +111,10 @@ export class RoomGenerator {
                  throw new Error("Image generation failed or returned no URL.");
             }
         } catch (error) {
-             console.error(`websim.imageGen failed for prompt "${prompt}":`, error);
-            throw error; // Re-throw the error to be caught by the caller
+             console.error(`websim.imageGen failed for prompt "${textureGenPrompt}":`, error);
+             // Return placeholder on generation error
+             console.warn("Falling back to placeholder texture due to image generation error.");
+             return this.createPlaceholderTexture(); // Use placeholder on failure
         }
     }
 
@@ -139,4 +145,3 @@ export class RoomGenerator {
         return texture;
     }
 }
-
