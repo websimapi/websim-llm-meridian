@@ -12,6 +12,10 @@ const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game
 renderer.setSize(window.innerWidth, window.innerHeight);
 // Background color will be managed by WorldManager
 
+// Add Fog
+// scene.fog = new THREE.Fog(0x87ceeb, 50, 150); // Linear fog
+scene.fog = new THREE.FogExp2(0x87ceeb, 0.015); // Exponential fog - start with sky blue, density 0.015
+
 // Game Components
 const worldManager = new WorldManager(scene);
 const uiManager = new UIManager();
