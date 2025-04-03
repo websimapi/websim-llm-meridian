@@ -97,7 +97,7 @@ export class UIManager {
         
         // Add containers to UI
         this.uiContainer.appendChild(roomManagementContainer);
-        this.uiContainer.appendChild(galleryContainer);
+        document.body.appendChild(galleryContainer); 
     }
 
     showImportDialog() {
