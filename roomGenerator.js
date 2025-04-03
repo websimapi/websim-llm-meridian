@@ -9,10 +9,10 @@ export class RoomGenerator {
     async generateRoomData(prompt, type = 'outdoor') {
         console.log(`Generating room data for: "${prompt}" (Type: ${type})`);
 
-        // 1. Use LLM to determine base texture materials and sky description
-        let materialData = { floor: 'generic floor', wall: null, ceiling: null, sky: null }; // Defaults
+        // 1. Use LLM to determine base texture materials
+        let materialData = { floor: 'generic floor', wall: null, ceiling: null }; // Defaults
         try {
-            const materialPrompt = `Analyze the following scene description and extract the primary material or appearance for the floor, walls (if indoor), ceiling (if indoor), and the sky (if outdoor). Respond ONLY with JSON in the format: {"floor": "material description", "wall": "material description or null", "ceiling": "material description or null", "sky": "sky description or null"}. Be concise, focusing on the texture name (e.g., 'grassy ground', 'stone bricks', 'damp cave wall', 'clear blue sky with clouds', 'starry night sky'). If a surface isn't applicable or unclear, use null. Description: ${prompt}`;
+            const materialPrompt = `Analyze the following room description and extract the primary material or appearance for the floor, walls (if indoor), and ceiling (if indoor). Respond ONLY with JSON in the format: {"floor": "material description", "wall": "material description or null", "ceiling": "material description or null"}. Be concise, focusing on the texture name (e.g., 'grass', 'stone bricks', 'damp cave wall', 'wooden planks'). If a surface isn't applicable (like outdoor walls/ceiling) or unclear, use null. Description: ${prompt}`;
             const completion = await websim.chat.completions.create({
                 messages: [{ role: "user", content: materialPrompt }],
                 json: true,
@@ -23,11 +23,10 @@ export class RoomGenerator {
              if (type === 'outdoor') {
                  materialData.wall = null;
                  materialData.ceiling = null;
-                 if (typeof materialData.sky !== 'string') materialData.sky = 'clear blue sky'; // Default outdoor sky
              } else {
-                 if (typeof materialData.wall !== 'string') materialData.wall = 'generic wall';
-                 if (typeof materialData.ceiling !== 'string') materialData.ceiling = null; // Allow null ceiling
-                 materialData.sky = null; // No sky indoors
+                if (typeof materialData.wall !== 'string') materialData.wall = 'generic wall';
+                // Allow ceiling to be null or string
+                if (typeof materialData.ceiling !== 'string') materialData.ceiling = null;
              }
 
             console.log("LLM suggested materials:", materialData);
@@ -36,8 +35,7 @@ export class RoomGenerator {
              // Use defaults defined above if LLM fails
              if (type === 'indoor') {
                 materialData.wall = 'generic wall';
-             } else { // outdoor default
-                 materialData.sky = 'clear blue sky';
+                // Leave ceiling as null default for indoor if LLM fails
              }
         }
 
@@ -47,27 +45,19 @@ export class RoomGenerator {
             floor: `Seamless tiling texture pattern, game asset style, ${materialData.floor}`,
             wall: type === 'indoor' && materialData.wall ? `Seamless tiling texture pattern, game asset style, ${materialData.wall}` : null,
             ceiling: type === 'indoor' && materialData.ceiling ? `Seamless tiling texture pattern, game asset style, ${materialData.ceiling}` : null,
-            // Use a 2:1 aspect ratio for equirectangular skybox
-            sky: type === 'outdoor' && materialData.sky ? `Panoramic 360 degree equirectangular image, game environment background, ${materialData.sky}` : null,
         };
 
-        const textures = { floor: null, wall: null, ceiling: null, sky: null }; // Initialize all keys
+        const textures = {};
         const texturePromises = [];
 
         for (const [key, texturePrompt] of Object.entries(texturePrompts)) {
             if (texturePrompt) {
-                 const isSkybox = key === 'sky';
                 texturePromises.push(
-                    this.generateTexture(texturePrompt, key, isSkybox) // Pass key and skybox flag
+                    this.generateTexture(texturePrompt, key) // Pass key for context in error messages
                         .then(texture => { textures[key] = texture; })
                         .catch(error => {
                             console.error(`Failed to generate ${key} texture with prompt "${texturePrompt}":`, error);
-                            // Use placeholder only for essential textures, sky can be null/default color
-                             if (key === 'floor' || (type === 'indoor' && key === 'wall')) {
-                                textures[key] = this.createPlaceholderTexture(key === 'floor' ? '#808080' : '#A0A0A0');
-                             } else {
-                                 textures[key] = null; // Allow sky/ceiling to fail gracefully
-                             }
+                            textures[key] = this.createPlaceholderTexture(key === 'floor' ? '#808080' : '#A0A0A0'); // Use placeholder on failure
                         })
                 );
             } else {
@@ -80,12 +70,12 @@ export class RoomGenerator {
         // Ensure essential textures have placeholders if generation failed entirely
         if (!textures.floor) textures.floor = this.createPlaceholderTexture('#808080'); // Grey floor
         if (type === 'indoor' && materialData.wall && !textures.wall) textures.wall = this.createPlaceholderTexture('#A0A0A0'); // Lighter grey wall
-        // Sky and Ceiling remain null if not generated or applicable
+        // Ceiling remains null if not generated or applicable
 
         // 3. Generate Room Structure (Simplified for now)
         const structure = {
-             type: type,
-             dimensions: { width: 50, depth: 50, height: (type === 'indoor' ? 4 : 0) }, // Use tileSize, adjust height
+             type: type, // 'indoor' or 'outdoor'
+             dimensions: { width: 20, depth: 20, height: 3 }, // Example dimensions
              // Future: exits: [{ direction: 'north', connectsTo: 'prompt for next room' }], shape: 'rectangular' | 'L-shaped' etc.
         };
 
@@ -94,42 +84,29 @@ export class RoomGenerator {
             // Example: { type: 'chair', position: { x: 2, y: 0, z: 3 }, prompt: 'a simple wooden chair' }
         ];
 
-        console.log("Generated textures:", {
-             floor: textures.floor ? textures.floor.uuid : null, // Log UUIDs instead of full objects
-             wall: textures.wall ? textures.wall.uuid : null,
-             ceiling: textures.ceiling ? textures.ceiling.uuid : null,
-             sky: textures.sky ? textures.sky.uuid : null
-         });
+        console.log("Generated textures:", textures);
 
         return {
             prompt: prompt,
             type: type,
-            textures: textures, // Pass the actual THREE.Texture objects initially
+            textures: textures,
             structure: structure,
             objects: objects,
         };
     }
 
-    async generateTexture(prompt, context = 'unknown', isSkybox = false) {
+    async generateTexture(prompt, context = 'unknown') {
         console.log(`Generating texture for ${context} with prompt: "${prompt}"`);
+        // Prompt already constructed to emphasize seamless tiling texture pattern
         const textureGenPrompt = prompt;
         try {
-            const imageOptions = {
-                 prompt: textureGenPrompt,
-                 // seed: Date.now() // Optional: use seed for reproducibility if needed
-             };
-
-            if (isSkybox) {
-                // Standard 2:1 aspect ratio for equirectangular images
-                imageOptions.width = 2048;
-                imageOptions.height = 1024;
-            } else {
-                // Square aspect ratio for seamless tiling textures
-                imageOptions.width = 512; // Power of 2 often good for textures
-                imageOptions.height = 512;
-            }
-
-            const result = await websim.imageGen(imageOptions);
+            // Use a square aspect ratio for seamless textures
+            const result = await websim.imageGen({
+                prompt: textureGenPrompt,
+                 width: 512, // Power of 2 often good for textures
+                 height: 512,
+                // seed: Date.now() // Optional: use seed for reproducibility if needed
+            });
 
             if (result && result.url) {
                 // Load the generated image URL into a THREE.Texture
@@ -137,30 +114,21 @@ export class RoomGenerator {
                     this.textureLoader.load(
                         result.url,
                         (texture) => {
-                             if (isSkybox) {
-                                 texture.mapping = THREE.EquirectangularReflectionMapping;
-                                 // No repeat for skybox
-                             } else {
-                                texture.wrapS = THREE.RepeatWrapping;
-                                texture.wrapT = THREE.RepeatWrapping;
-                                // Adjust repeat based on typical texture scale and tile size
-                                const textureScale = 2; // Assumed real-world size represented by the texture
-                                const repeatValue = 50 / textureScale; // Use tileSize (50)
-                                texture.repeat.set(repeatValue, repeatValue);
-                             }
-                             console.log(`Successfully loaded ${context} texture for: "${prompt}"`);
+                            texture.wrapS = THREE.RepeatWrapping;
+                            texture.wrapT = THREE.RepeatWrapping;
+                            // Adjust repeat based on typical texture scale and tile size
+                            const textureScale = 2; // Assumed real-world size represented by the 512x512 texture
+                            const repeatValue = 50 / textureScale; // Updated to match new tileSize of 50
+                            texture.repeat.set(repeatValue, repeatValue);
+                            console.log(`Successfully loaded ${context} texture for: "${prompt}"`);
                             resolve(texture);
                         },
                         undefined, // onProgress callback currently not supported for imageGen
                         (err) => {
                              console.error(`Error loading texture from URL ${result.url} for ${context}:`, err);
-                             // Resolve with placeholder on load error for essential textures
+                             // Resolve with placeholder on load error to prevent breaking the build process
                              console.warn(`Falling back to placeholder texture for ${context} due to load error.`);
-                              if (context === 'floor' || context === 'wall') {
-                                 resolve(this.createPlaceholderTexture());
-                              } else {
-                                 resolve(null); // Allow sky/ceiling to fail to null
-                              }
+                             resolve(this.createPlaceholderTexture());
                         }
                     );
                 });
@@ -169,13 +137,9 @@ export class RoomGenerator {
             }
         } catch (error) {
              console.error(`websim.imageGen failed for prompt "${textureGenPrompt}" (context: ${context}):`, error);
-             // Return placeholder on generation error for essential textures
+             // Return placeholder on generation error
              console.warn(`Falling back to placeholder texture for ${context} due to image generation error.`);
-             if (context === 'floor' || context === 'wall') {
-                 return this.createPlaceholderTexture();
-             } else {
-                 return null; // Allow sky/ceiling to fail to null
-             }
+             return this.createPlaceholderTexture(); // Use placeholder on failure
         }
     }
 

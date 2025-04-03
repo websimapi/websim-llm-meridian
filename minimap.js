@@ -7,14 +7,14 @@ export class Minimap {
         this.minimapContainer.id = 'minimap-container';
         document.body.appendChild(this.minimapContainer);
         
-        this.minimapCanvas = document.createElement('canvas');
-        this.minimapCanvas.id = 'minimap-canvas';
-        this.minimapCanvas.width = 150;
-        this.minimapCanvas.height = 150;
-        this.minimapContainer.appendChild(this.minimapCanvas);
+        this.minimapRenderer = new THREE.WebGLRenderer({ alpha: true });
+        this.minimapRenderer.setSize(150, 150);
+        this.minimapCamera = new THREE.OrthographicCamera(-25, 25, 25, -25, 0.1, 1000);
+        this.minimapCamera.position.set(0, 30, 0);
+        this.minimapCamera.lookAt(0, 0, 0);
+        this.minimapCamera.rotation.z = Math.PI; // Rotate to match player orientation
         
-        this.ctx = this.minimapCanvas.getContext('2d');
-        this.mapScale = 0.1; // Scale factor between world and minimap
+        this.minimapContainer.appendChild(this.minimapRenderer.domElement);
         
         this.initStyles();
     }
@@ -34,59 +34,35 @@ export class Minimap {
                 z-index: 1000;
                 overflow: hidden;
             }
-            
-            #minimap-canvas {
-                width: 100%;
-                height: 100%;
-            }
         `;
         document.head.appendChild(style);
     }
     
     update(playerPosition) {
-        // Clear the canvas
-        this.ctx.fillStyle = '#222';
-        this.ctx.fillRect(0, 0, this.minimapCanvas.width, this.minimapCanvas.height);
+        if (!window.game || !window.game.scene) return;
         
-        // Draw the room boundaries
-        this.ctx.strokeStyle = '#666';
-        this.ctx.lineWidth = 2;
-        
-        const roomSize = this.worldManager.tileSize * this.mapScale;
-        const centerX = this.minimapCanvas.width / 2;
-        const centerY = this.minimapCanvas.height / 2;
-        
-        // Calculate room position relative to player
-        const roomX = centerX - (playerPosition.x * this.mapScale);
-        const roomZ = centerY - (playerPosition.z * this.mapScale);
-        
-        // Draw room boundary
-        const halfRoomSize = roomSize / 2;
-        this.ctx.strokeRect(
-            roomX - halfRoomSize, 
-            roomZ - halfRoomSize, 
-            roomSize, 
-            roomSize
+        // Update camera position to follow player from above
+        this.minimapCamera.position.set(
+            playerPosition.x,
+            30,
+            playerPosition.z
         );
         
-        // Draw player indicator (as a dot)
-        this.ctx.fillStyle = '#4CAF50';
-        this.ctx.beginPath();
-        this.ctx.arc(centerX, centerY, 5, 0, Math.PI * 2);
-        this.ctx.fill();
+        // Draw player indicator as a small sphere
+        this.ensurePlayerIndicator();
+        this.playerIndicator.position.set(playerPosition.x, 0.5, playerPosition.z);
         
-        // Draw player direction indicator
-        if (window.game && window.game.playerController) {
-            const direction = window.game.playerController.yawObject.rotation.y;
-            this.ctx.strokeStyle = '#4CAF50';
-            this.ctx.lineWidth = 2;
-            this.ctx.beginPath();
-            this.ctx.moveTo(centerX, centerY);
-            this.ctx.lineTo(
-                centerX + Math.sin(direction) * 15,
-                centerY + Math.cos(direction) * 15
-            );
-            this.ctx.stroke();
+        // Render the scene from above
+        this.minimapRenderer.render(window.game.scene, this.minimapCamera);
+    }
+    
+    ensurePlayerIndicator() {
+        if (!this.playerIndicator) {
+            const geometry = new THREE.SphereGeometry(1, 16, 16);
+            const material = new THREE.MeshBasicMaterial({ color: 0x4CAF50 });
+            this.playerIndicator = new THREE.Mesh(geometry, material);
+            this.playerIndicator.position.y = 0.5; // Just above the floor
+            window.game.scene.add(this.playerIndicator);
         }
     }
 }
