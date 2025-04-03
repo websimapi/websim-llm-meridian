@@ -196,19 +196,19 @@ export class RoomGenerator {
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
         // Create a gradient at the left and right edges to hide the seam
-        // Blend width relative to image width (increased percentage for thicker fog/blend)
-        const blendWidth = Math.floor(image.width * 0.40); // 40% of the width for blending (increased from 20%)
+        // Blend width relative to image width (40% as previously set)
+        const blendWidth = Math.floor(image.width * 0.40);
 
         // Left edge gradient (seam start)
         const leftGradient = ctx.createLinearGradient(0, 0, blendWidth, 0);
-        // Using a strong alpha blend for a more noticeable "fog" effect
-        leftGradient.addColorStop(0, 'rgba(255, 255, 255, 0.85)'); // Slightly increased opacity
+        // Make the fog fully opaque at the edge
+        leftGradient.addColorStop(0, 'rgba(255, 255, 255, 1.0)'); // Opaque white
         leftGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Fully transparent
 
         // Right edge gradient (seam end)
         const rightGradient = ctx.createLinearGradient(image.width, 0, image.width - blendWidth, 0);
-        // Using a strong alpha blend
-        rightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.85)'); // Slightly increased opacity
+        // Make the fog fully opaque at the edge
+        rightGradient.addColorStop(0, 'rgba(255, 255, 255, 1.0)'); // Opaque white
         rightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Fully transparent
 
         // Apply the gradients over the existing image
@@ -222,7 +222,7 @@ export class RoomGenerator {
         // Update the texture with the processed canvas
         texture.image = canvas;
         texture.needsUpdate = true;
-        console.log(`Processed skybox seam with increased blend width: ${blendWidth}px (40%) and increased alpha`);
+        console.log(`Processed skybox seam with increased blend width: ${blendWidth}px (40%) and opaque fog`);
     }
 
     createPlaceholderTexture(color = '#FF00FF') { // Default to magenta for visibility
