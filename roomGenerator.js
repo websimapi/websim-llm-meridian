@@ -39,7 +39,6 @@ export class RoomGenerator {
              }
         }
 
-
         // 2. Generate Textures using derived materials
         const texturePrompts = {
             floor: `Seamless tiling texture pattern, game asset style, ${materialData.floor}`,

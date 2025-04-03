@@ -13,16 +13,6 @@ export class UIManager {
         statusElement.textContent = 'Status: OK';
         this.uiContainer.appendChild(statusElement);
 
-        // Add first-person view toggle button
-        const viewModeButton = document.createElement('button');
-        viewModeButton.textContent = 'Toggle First-Person View';
-        viewModeButton.onclick = () => {
-            if (window.game && window.game.playerController) {
-                window.game.playerController.toggleViewMode();
-            }
-        };
-        this.uiContainer.appendChild(viewModeButton);
-
         // Add a debug button to trigger room generation manually
         const debugButton = document.createElement('button');
         debugButton.textContent = 'Load Debug Room (Forest)';

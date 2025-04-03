@@ -70,6 +70,6 @@ worldManager.generateInitialWorld().then(() => {
     // Handle error appropriately, maybe show an error message
 });
 
-// Remove debug axes
-// const axesHelper = new THREE.AxesHelper( 5 );
-// scene.add( axesHelper );
+// Add debug axes
+const axesHelper = new THREE.AxesHelper( 5 );
+scene.add( axesHelper );

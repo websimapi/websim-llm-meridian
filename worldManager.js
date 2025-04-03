@@ -13,6 +13,7 @@ export class WorldManager {
         this.tileSize = 50; // Increased from 20 to 50 for larger rooms
         this.rooms = []; // Store all generated rooms data
         this.currentRoomIndex = -1; // Track the currently active room
+        this.skybox = null; // Store current skybox
     }
 
     async generateInitialWorld() {
@@ -93,14 +94,73 @@ export class WorldManager {
              // Adjust lighting/sky for indoor
              this.scene.background = new THREE.Color(0x111111); // Dark background for indoor
              // Consider adding point lights or adjusting ambient light for indoor scenes
+             
+             // Remove skybox if it exists for indoor environments
+             if (this.skybox) {
+                 this.scene.remove(this.skybox);
+                 this.skybox = null;
+             }
         } else {
-             // Outdoor specific setup
-             this.scene.background = new THREE.Color(0x87ceeb); // Blue sky
-             // Potentially add fog, skybox etc.
+             // Outdoor specific setup - generate or update skybox
+             this.generateSkybox(roomData.prompt);
         }
 
         // TODO: Implement more complex room structures based on roomData.structure
         // TODO: Add objects based on roomData.objects
+    }
+
+    async generateSkybox(prompt) {
+        // Remove existing skybox if present
+        if (this.skybox) {
+            this.scene.remove(this.skybox);
+            this.skybox = null;
+        }
+        
+        try {
+            // Generate a panoramic skybox image based on the room's prompt
+            const skyboxPrompt = `Panoramic 360-degree image of ${prompt}. Ultra high-definition landscape view with distant horizon, realistic sky, and immersive environment details. Seamless panorama for a skybox.`;
+            
+            console.log("Generating skybox with prompt:", skyboxPrompt);
+            
+            const result = await websim.imageGen({
+                prompt: skyboxPrompt,
+                aspect_ratio: "16:9",
+                width: 2048,
+                height: 1024,
+            });
+            
+            if (result && result.url) {
+                // Create skybox using the generated panoramic image
+                const textureLoader = new THREE.TextureLoader();
+                textureLoader.load(result.url, (texture) => {
+                    texture.mapping = THREE.EquirectangularReflectionMapping;
+                    
+                    // Create a large sphere with inverted normals to act as skybox
+                    const geometry = new THREE.SphereGeometry(500, 60, 40);
+                    // Flip the geometry inside out
+                    geometry.scale(-1, 1, 1);
+                    
+                    const material = new THREE.MeshBasicMaterial({
+                        map: texture,
+                        side: THREE.BackSide
+                    });
+                    
+                    this.skybox = new THREE.Mesh(geometry, material);
+                    this.scene.add(this.skybox);
+                    
+                    // Set the environment map for reflective materials
+                    this.scene.environment = texture;
+                    
+                    console.log("Skybox created successfully");
+                });
+            } else {
+                console.error("Failed to generate skybox image");
+                this.scene.background = new THREE.Color(0x87ceeb); // Fallback to blue sky
+            }
+        } catch (error) {
+            console.error("Error generating skybox:", error);
+            this.scene.background = new THREE.Color(0x87ceeb); // Fallback to blue sky
+        }
     }
 
     clearCurrentRoom() {
