@@ -47,8 +47,10 @@ export class RoomGenerator {
             floor: `Seamless tiling texture pattern, game asset style, ${materialData.floor}`,
             wall: type === 'indoor' && materialData.wall ? `Seamless tiling texture pattern, game asset style, ${materialData.wall}` : null,
             ceiling: type === 'indoor' && materialData.ceiling ? `Seamless tiling texture pattern, game asset style, ${materialData.ceiling}` : null,
-            // Use a 2:1 aspect ratio for equirectangular skybox
-            sky: type === 'outdoor' && materialData.sky ? `Panoramic 360 degree equirectangular image, game environment background, ${materialData.sky}` : null,
+            // Enhanced Skybox Prompt
+            sky: type === 'outdoor' && materialData.sky
+                ? `High-resolution 360-degree equirectangular panorama, photorealistic style, game environment background, ultra-detailed, immersive view. Scene description: ${materialData.sky}. Ensure seamless wrapping.`
+                : null,
         };
 
         const textures = { floor: null, wall: null, ceiling: null, sky: null }; // Initialize all keys
@@ -120,9 +122,10 @@ export class RoomGenerator {
              };
 
             if (isSkybox) {
-                // Standard 2:1 aspect ratio for equirectangular images
-                imageOptions.width = 2048;
-                imageOptions.height = 1024;
+                // Use higher resolution 2:1 aspect ratio for equirectangular images
+                imageOptions.width = 4096; // Increased resolution
+                imageOptions.height = 2048; // Increased resolution
+                console.log(`Requesting skybox with dimensions: ${imageOptions.width}x${imageOptions.height}`);
             } else {
                 // Square aspect ratio for seamless tiling textures
                 imageOptions.width = 512; // Power of 2 often good for textures
@@ -188,33 +191,38 @@ export class RoomGenerator {
         canvas.width = image.width;
         canvas.height = image.height;
         const ctx = canvas.getContext('2d');
-        
+
         // Draw the original image to the canvas
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-        
+
         // Create a gradient at the left and right edges to hide the seam
+        // Blend width relative to image width (adjust percentage if needed)
         const blendWidth = Math.floor(image.width * 0.05); // 5% of the width for blending
-        
+
         // Left edge gradient (seam start)
         const leftGradient = ctx.createLinearGradient(0, 0, blendWidth, 0);
-        leftGradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)'); // Cloudy white
-        leftGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Transparent
-        
+        // Using a more subtle alpha blend
+        leftGradient.addColorStop(0, 'rgba(255, 255, 255, 0.5)'); // Semi-transparent white-ish overlay
+        leftGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Fully transparent
+
         // Right edge gradient (seam end)
         const rightGradient = ctx.createLinearGradient(image.width, 0, image.width - blendWidth, 0);
-        rightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)'); // Cloudy white
-        rightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Transparent
-        
-        // Apply the gradients
+        // Using a more subtle alpha blend
+        rightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.5)'); // Semi-transparent white-ish overlay
+        rightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Fully transparent
+
+        // Apply the gradients over the existing image
+        // Use 'source-over' (default) blending which draws the gradient on top
         ctx.fillStyle = leftGradient;
         ctx.fillRect(0, 0, blendWidth, image.height);
-        
+
         ctx.fillStyle = rightGradient;
         ctx.fillRect(image.width - blendWidth, 0, blendWidth, image.height);
-        
+
         // Update the texture with the processed canvas
         texture.image = canvas;
         texture.needsUpdate = true;
+        console.log(`Processed skybox seam with blend width: ${blendWidth}px`);
     }
 
     createPlaceholderTexture(color = '#FF00FF') { // Default to magenta for visibility
