@@ -79,7 +79,6 @@ mainLight.shadow.bias = -0.0005; // Adjust bias to prevent shadow acne
 // const shadowCamHelper = new THREE.CameraHelper(mainLight.shadow.camera);
 // scene.add(shadowCamHelper);
 
-
 // Initial Setup
 // Load player model (async) - call after player controller is initialized
 playerController.loadPlayerModel('/path/to/your/first-person-rig.gltf') 
@@ -100,7 +99,6 @@ function animate() {
     const playerPos = playerController.getPlayerPosition();
     mainLight.target.position.set(playerPos.x, 0, playerPos.z); // Target the ground near the player
     mainLight.target.updateMatrixWorld(); // Important after moving the target
-
 
     renderer.render(scene, camera);
 }
