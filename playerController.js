@@ -136,7 +136,7 @@ export class PlayerController {
             this.yawObject.position.y = 1.6; // Eye height
         } else {
             // Third-person: camera higher up and back
-            this.pitchObject.position.set(0, 0, 0);
+            this.pitchObject.position.set(0, 0, 5); // Move camera back by 5 units
             this.yawObject.position.y = 5; // Higher position for overview
         }
         
