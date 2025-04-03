@@ -117,9 +117,8 @@ export class RoomGenerator {
                             texture.wrapS = THREE.RepeatWrapping;
                             texture.wrapT = THREE.RepeatWrapping;
                             // Adjust repeat based on typical texture scale and tile size
-                            // If tile is 20x20 units, and texture represents maybe 2x2 units, repeat = 10
                             const textureScale = 2; // Assumed real-world size represented by the 512x512 texture
-                            const repeatValue = 20 / textureScale; // Example: worldManager.tileSize / textureScale
+                            const repeatValue = 50 / textureScale; // Updated to match new tileSize of 50
                             texture.repeat.set(repeatValue, repeatValue);
                             console.log(`Successfully loaded ${context} texture for: "${prompt}"`);
                             resolve(texture);
@@ -167,7 +166,7 @@ export class RoomGenerator {
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.RepeatWrapping;
         const textureScale = 2;
-        const repeatValue = 20 / textureScale; // Match repeat calculation
+        const repeatValue = 50 / textureScale; // Updated to match new tileSize of 50
         texture.repeat.set(repeatValue, repeatValue);
         return texture;
     }

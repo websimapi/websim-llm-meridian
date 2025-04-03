@@ -7,7 +7,7 @@ export class PlayerController {
         this.worldManager = worldManager; // To interact with the world (e.g., trigger zone changes)
 
         this.velocity = new THREE.Vector3();
-        this.moveSpeed = 5.0; // Units per second
+        this.moveSpeed = 10.0; // Increased from 5.0 to 10.0 to match larger rooms
         this.lookSpeed = 0.002; // Radians per pixel movement
 
         this.moveForward = false;
@@ -123,4 +123,3 @@ export class PlayerController {
         return this.yawObject.position;
     }
 }
-

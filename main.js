@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { WorldManager } from './worldManager.js';
 import { PlayerController } from './playerController.js';
 import { UIManager } from './uiManager.js';
+import { Minimap } from './minimap.js';
 
 // Basic Scene Setup
 const scene = new THREE.Scene();
@@ -14,6 +15,7 @@ renderer.setClearColor(0x87ceeb); // Sky blue for outdoor default
 const worldManager = new WorldManager(scene);
 const uiManager = new UIManager();
 const playerController = new PlayerController(camera, scene, worldManager); // Pass worldManager for collision/interaction
+const minimap = new Minimap(worldManager); // Create the minimap
 
 // Make core components accessible for debugging (optional, but helps with the current structure)
 window.game = {
@@ -22,7 +24,8 @@ window.game = {
     renderer,
     worldManager,
     playerController,
-    uiManager
+    uiManager,
+    minimap
 };
 
 // Define the debug function here, where worldManager is in scope
@@ -47,6 +50,7 @@ function animate() {
 
     playerController.update();
     worldManager.update(playerController.getPlayerPosition()); // Update world based on player position
+    minimap.update(playerController.getPlayerPosition()); // Update minimap
 
     renderer.render(scene, camera);
 }

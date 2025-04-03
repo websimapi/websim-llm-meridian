@@ -13,35 +13,6 @@ export class UIManager {
         statusElement.textContent = 'Status: OK';
         this.uiContainer.appendChild(statusElement);
 
-        // Add object generation input and button
-        const objectInputContainer = document.createElement('div');
-        objectInputContainer.style.marginTop = '10px';
-        
-        const objectInput = document.createElement('input');
-        objectInput.type = 'text';
-        objectInput.placeholder = 'Describe an object...';
-        objectInput.style.width = '100%';
-        objectInput.style.padding = '5px';
-        objectInput.style.marginBottom = '5px';
-        
-        const generateObjectButton = document.createElement('button');
-        generateObjectButton.textContent = 'Generate Object';
-        generateObjectButton.onclick = () => {
-            if (window.game && window.game.worldManager) {
-                const objectDescription = objectInput.value.trim();
-                if (objectDescription) {
-                    window.game.worldManager.generateSceneObject(objectDescription);
-                    objectInput.value = ''; // Clear input after generation
-                } else {
-                    this.showNotification('Please enter an object description', 'error');
-                }
-            }
-        };
-        
-        objectInputContainer.appendChild(objectInput);
-        objectInputContainer.appendChild(generateObjectButton);
-        this.uiContainer.appendChild(objectInputContainer);
-
         // Add a debug button to trigger room generation manually
         const debugButton = document.createElement('button');
         debugButton.textContent = 'Load Debug Room (Forest)';
