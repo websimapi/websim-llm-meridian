@@ -139,6 +139,8 @@ export class RoomGenerator {
                         (texture) => {
                              if (isSkybox) {
                                  texture.mapping = THREE.EquirectangularReflectionMapping;
+                                 // Process skybox to hide seam line
+                                 this.processSkyboxSeam(texture);
                                  // No repeat for skybox
                              } else {
                                 texture.wrapS = THREE.RepeatWrapping;
@@ -179,8 +181,44 @@ export class RoomGenerator {
         }
     }
 
-     createPlaceholderTexture(color = '#FF00FF') { // Default to magenta for visibility
-         console.warn(`Creating placeholder texture with color ${color}.`);
+    processSkyboxSeam(texture) {
+        // Create a temporary canvas to process the skybox image
+        const image = texture.image;
+        const canvas = document.createElement('canvas');
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const ctx = canvas.getContext('2d');
+        
+        // Draw the original image to the canvas
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+        
+        // Create a gradient at the left and right edges to hide the seam
+        const blendWidth = Math.floor(image.width * 0.05); // 5% of the width for blending
+        
+        // Left edge gradient (seam start)
+        const leftGradient = ctx.createLinearGradient(0, 0, blendWidth, 0);
+        leftGradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)'); // Cloudy white
+        leftGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Transparent
+        
+        // Right edge gradient (seam end)
+        const rightGradient = ctx.createLinearGradient(image.width, 0, image.width - blendWidth, 0);
+        rightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)'); // Cloudy white
+        rightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');   // Transparent
+        
+        // Apply the gradients
+        ctx.fillStyle = leftGradient;
+        ctx.fillRect(0, 0, blendWidth, image.height);
+        
+        ctx.fillStyle = rightGradient;
+        ctx.fillRect(image.width - blendWidth, 0, blendWidth, image.height);
+        
+        // Update the texture with the processed canvas
+        texture.image = canvas;
+        texture.needsUpdate = true;
+    }
+
+    createPlaceholderTexture(color = '#FF00FF') { // Default to magenta for visibility
+        console.warn(`Creating placeholder texture with color ${color}.`);
         const canvas = document.createElement('canvas');
         canvas.width = 64;
         canvas.height = 64;
