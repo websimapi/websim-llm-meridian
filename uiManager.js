@@ -66,6 +66,22 @@ export class UIManager {
         galleryContainer.classList.add('gallery-container');
         galleryContainer.style.display = 'none';
         
+        // Add gallery header
+        const galleryHeader = document.createElement('div');
+        galleryHeader.classList.add('gallery-header');
+        
+        const galleryTitle = document.createElement('h2');
+        galleryTitle.classList.add('gallery-title');
+        galleryTitle.textContent = 'Room Gallery';
+        
+        const gallerySubtitle = document.createElement('div');
+        gallerySubtitle.classList.add('gallery-subtitle');
+        gallerySubtitle.textContent = 'Browse and teleport to your generated rooms';
+        
+        galleryHeader.appendChild(galleryTitle);
+        galleryHeader.appendChild(gallerySubtitle);
+        galleryContainer.appendChild(galleryHeader);
+        
         // Close button for gallery
         const closeGalleryButton = document.createElement('button');
         closeGalleryButton.classList.add('close-gallery');
@@ -172,14 +188,18 @@ export class UIManager {
             
             const roomType = document.createElement('div');
             roomType.classList.add('room-type');
-            roomType.textContent = `Type: ${room.type}`;
+            roomType.textContent = `${room.type.charAt(0).toUpperCase() + room.type.slice(1)}`;
             
             const roomPrompt = document.createElement('div');
             roomPrompt.classList.add('room-prompt');
             roomPrompt.textContent = room.prompt;
             
+            const roomActions = document.createElement('div');
+            roomActions.classList.add('room-actions');
+            
             const teleportButton = document.createElement('button');
-            teleportButton.textContent = 'Teleport';
+            teleportButton.textContent = index === currentIndex ? 'Current Room' : 'Teleport';
+            teleportButton.disabled = index === currentIndex;
             teleportButton.onclick = () => {
                 if (window.game && window.game.worldManager) {
                     window.game.worldManager.teleportToRoom(index);
@@ -187,11 +207,13 @@ export class UIManager {
                 }
             };
             
+            roomActions.appendChild(teleportButton);
+            
             // Assemble room item
             roomDetails.appendChild(roomName);
             roomDetails.appendChild(roomType);
             roomDetails.appendChild(roomPrompt);
-            roomDetails.appendChild(teleportButton);
+            roomDetails.appendChild(roomActions);
             
             roomItem.appendChild(roomPreview);
             roomItem.appendChild(roomDetails);
