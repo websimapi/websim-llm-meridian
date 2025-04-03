@@ -9,26 +9,26 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
 const renderer = new THREE.WebGLRenderer({
     canvas: document.getElementById('game-canvas'),
-    antialias: true // Enable antialiasing for smoother edges
+    antialias: true 
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio); // Use device pixel ratio for sharper rendering
+renderer.setPixelRatio(window.devicePixelRatio); 
 
 // Enable Shadow Mapping
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadows
+renderer.shadowMap.type = THREE.VSMShadowMap; 
 
 // Tone mapping for more realistic lighting
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
-renderer.outputColorSpace = THREE.SRGBColorSpace; // Correct color space
+renderer.toneMappingExposure = 1.1; 
+renderer.outputColorSpace = THREE.SRGBColorSpace; 
 
 
 // Game Components
 const worldManager = new WorldManager(scene);
 const uiManager = new UIManager();
 const playerController = new PlayerController(camera, scene, worldManager, uiManager);
-const minimap = new Minimap(worldManager); // Create the minimap
+const minimap = new Minimap(worldManager); 
 
 // Make core components accessible for debugging
 window.game = {
@@ -38,7 +38,7 @@ window.game = {
     worldManager,
     playerController,
     uiManager,
-    minimap
+    minimap 
 };
 
 window.loadNewDebugRoom = async (prompt, type) => {
@@ -49,58 +49,54 @@ window.loadNewDebugRoom = async (prompt, type) => {
     }
 };
 
-// Improved Lighting Setup
-scene.add(new THREE.AmbientLight(0x606080, 0.6)); // Slightly blueish ambient light, lower intensity
+// Enhanced Lighting Setup
+const ambientLight = new THREE.AmbientLight(0x708090, 0.5); 
+scene.add(ambientLight);
 
-const hemiLight = new THREE.HemisphereLight(0xB1E1FF, 0xB97A20, 0.8); // Sky color, Ground color, Intensity
-hemiLight.position.set(0, 50, 0);
+const hemiLight = new THREE.HemisphereLight(0xADD8E6, 0x404020, 0.8); 
+hemiLight.position.set(0, 50, 0); 
 scene.add(hemiLight);
 
-const mainLight = new THREE.DirectionalLight(0xffffff, 1.5); // Brighter main light
-mainLight.position.set(15, 30, 20); // Positioned higher and angled
-mainLight.castShadow = true; // Enable shadows for this light
+const mainLight = new THREE.DirectionalLight(0xffffff, 1.8); 
+mainLight.position.set(25, 40, 35); 
+mainLight.castShadow = true;
 scene.add(mainLight);
-scene.add(mainLight.target); // Required for directional light shadows
+mainLight.target = new THREE.Object3D();
+scene.add(mainLight.target);
 
-// Configure Shadow Properties
-mainLight.shadow.mapSize.width = 2048; // Higher resolution shadows
+mainLight.shadow.mapSize.width = 2048; 
 mainLight.shadow.mapSize.height = 2048;
-mainLight.shadow.camera.near = 0.5;
-mainLight.shadow.camera.far = 500;
-// Define the area covered by the shadow camera
-const shadowCamSize = worldManager.tileSize * 0.75; // Cover slightly larger than the room
+mainLight.shadow.camera.near = 1; 
+mainLight.shadow.camera.far = 150; 
+const shadowCamSize = worldManager.tileSize * 0.8; 
 mainLight.shadow.camera.left = -shadowCamSize;
 mainLight.shadow.camera.right = shadowCamSize;
 mainLight.shadow.camera.top = shadowCamSize;
 mainLight.shadow.camera.bottom = -shadowCamSize;
-mainLight.shadow.bias = -0.0005; // Adjust bias to prevent shadow acne
-
-// Add a helper for the shadow camera (optional, for debugging)
-// const shadowCamHelper = new THREE.CameraHelper(mainLight.shadow.camera);
-// scene.add(shadowCamHelper);
+mainLight.shadow.bias = -0.0002; 
+mainLight.shadow.blurSamples = 16; 
+mainLight.shadow.radius = 4; 
 
 
 // Initial Setup
-// Load player model (async) - call after player controller is initialized
 playerController.loadPlayerModel('/path/to/your/first-person-rig.gltf') 
-    .then(() => console.log("Player model loaded (or placeholder created)."))
-    .catch(err => console.error("Failed to load player model:", err));
+    .then(() => console.log("Player model setup complete (loaded or placeholder)."))
+    .catch(err => console.error("Error during player model setup:", err));
 
 // Game Loop
+const clock = new THREE.Clock(); 
 function animate() {
     requestAnimationFrame(animate);
 
-    const delta = window.game.playerController.clock.getDelta();
+    const delta = clock.getDelta(); 
 
     playerController.update(delta);
-    worldManager.update(playerController.getPlayerPosition());
-    minimap.update(playerController.getPlayerPosition());
+    worldManager.update(playerController.getPlayerPosition()); 
+    minimap.update(playerController.getPlayerPosition()); 
 
-    // Update lighting target (e.g., make it follow the player slightly)
     const playerPos = playerController.getPlayerPosition();
-    mainLight.target.position.set(playerPos.x, 0, playerPos.z); // Target the ground near the player
-    mainLight.target.updateMatrixWorld(); // Important after moving the target
-
+    mainLight.target.position.set(playerPos.x, 0, playerPos.z);
+    mainLight.target.updateMatrixWorld(); 
 
     renderer.render(scene, camera);
 }
@@ -110,17 +106,14 @@ window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
-    minimap.updateCanvasSize(); // Notify minimap of potential resize
+    minimap.updateCanvasSize(); 
 });
 
 // Initial world generation
 worldManager.generateInitialWorld().then(() => {
-    animate(); // Start the game loop
+    console.log("Initial world generated, starting animation loop.");
+    animate(); 
 }).catch(error => {
-    console.error("Failed to generate initial world:", error);
-    uiManager.showNotification("Error: Could not load initial world.", "error");
+    console.error("Critical Error: Failed to generate initial world. Cannot start game.", error);
+    uiManager.showNotification("FATAL: Could not load initial world. Please refresh.", "error", 10000);
 });
-
-// Add debug axes (optional)
-// const axesHelper = new THREE.AxesHelper( 5 );
-// scene.add(axesHelper );
