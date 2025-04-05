@@ -1,13 +1,15 @@
 import * as THREE from 'three';
+import { TextureManager } from './textureManager.js'; // Import TextureManager
 
-// Define default textures as constants for reuse
+// Default placeholder colors moved to TextureManager, but keep references here if needed
 const DEFAULT_FLOOR_PLACEHOLDER_COLOR = '#808080';
 const DEFAULT_WALL_PLACEHOLDER_COLOR = '#A0A0A0';
 const DEFAULT_CEILING_PLACEHOLDER_COLOR = '#555555';
 
 export class RoomGenerator {
     constructor() {
-        this.textureLoader = new THREE.TextureLoader();
+        this.textureLoader = new THREE.TextureLoader(); // Still needed for internal loading before upload
+        this.textureManager = new TextureManager(); // Instantiate TextureManager
     }
 
     async generateRoomData(prompt, type = 'outdoor') {
@@ -62,12 +64,12 @@ export class RoomGenerator {
                 if (texturePrompt) {
                     const isSkybox = key === 'sky';
                     texturePromises.push(
-                        this.generateTexture(texturePrompt, key, isSkybox) // Pass key and skybox flag
+                        this.generateAndLoadTexture(texturePrompt, key, isSkybox) // Use the combined function
                             .then(texture => { generatedTextures[key] = texture; }) // Store the generated THREE.Texture
                             .catch(error => {
                                 console.error(`Failed generation chain for ${key} texture:`, error);
-                                // Placeholder logic moved inside generateTexture's catch block
-                                generatedTextures[key] = null; // Ensure it's null if generation fails completely
+                                // Placeholder logic now relies on textureManager if generateAndLoadTexture returns null
+                                generatedTextures[key] = null;
                             })
                     );
                 } else {
@@ -80,16 +82,19 @@ export class RoomGenerator {
             // Ensure essential textures have placeholders *if generation failed AND they are required*
             if (!generatedTextures.floor) {
                 console.warn("Floor generation failed, creating placeholder.");
-                generatedTextures.floor = this.createPlaceholderTexture(DEFAULT_FLOOR_PLACEHOLDER_COLOR);
+                // Use TextureManager to create placeholder
+                generatedTextures.floor = this.textureManager.createPlaceholderTexture(DEFAULT_FLOOR_PLACEHOLDER_COLOR);
             }
             if (type === 'indoor' && materialData.wall && !generatedTextures.wall) {
                 console.warn("Wall generation failed for indoor room, creating placeholder.");
-                generatedTextures.wall = this.createPlaceholderTexture(DEFAULT_WALL_PLACEHOLDER_COLOR);
+                 // Use TextureManager to create placeholder
+                generatedTextures.wall = this.textureManager.createPlaceholderTexture(DEFAULT_WALL_PLACEHOLDER_COLOR);
             }
             // Use placeholder ceiling if prompt existed but generation failed
             if (type === 'indoor' && materialData.ceiling && !generatedTextures.ceiling) {
                 console.warn("Ceiling generation failed for indoor room, creating placeholder.");
-                generatedTextures.ceiling = this.createPlaceholderTexture(DEFAULT_CEILING_PLACEHOLDER_COLOR);
+                 // Use TextureManager to create placeholder
+                generatedTextures.ceiling = this.textureManager.createPlaceholderTexture(DEFAULT_CEILING_PLACEHOLDER_COLOR);
             }
 
             // 3. Generate Room Structure (Simplified for now)
@@ -126,12 +131,13 @@ export class RoomGenerator {
         }
     }
 
-    async generateTexture(prompt, context = 'unknown', isSkybox = false) {
+    // Renamed from generateTexture to reflect it generates AND loads into THREE.Texture
+    async generateAndLoadTexture(prompt, context = 'unknown', isSkybox = false) {
         console.log(`Generating texture for ${context} with prompt: "${prompt}"`);
         try {
             const imageOptions = { prompt };
             if (isSkybox) {
-                imageOptions.width = 2048; // Adjusted skybox resolution
+                imageOptions.width = 2048;
                 imageOptions.height = 1024;
             } else {
                 imageOptions.width = 512;
@@ -144,48 +150,38 @@ export class RoomGenerator {
                 throw new Error("Image generation failed or returned no URL.");
             }
 
-            // Load the generated image URL into a THREE.Texture
+            // Load the generated image URL into a THREE.Texture using the internal loader
             const texture = await new Promise((resolve, reject) => {
                 this.textureLoader.load(
                     result.url,
                     (loadedTexture) => {
-                        console.log(`Successfully loaded texture from URL for ${context}`);
+                        console.log(`Successfully loaded generated texture from URL for ${context}`);
                         if (isSkybox) {
                             loadedTexture.mapping = THREE.EquirectangularReflectionMapping;
-                            // Apply seam processing *after* loading, *before* resolving
                             this.processSkyboxSeam(loadedTexture);
                         } else {
+                            // Apply basic repeat settings, final repeat calculation happens in buildRoom/TextureManager
                             loadedTexture.wrapS = THREE.RepeatWrapping;
                             loadedTexture.wrapT = THREE.RepeatWrapping;
-                            const textureScale = 2;
-                            const repeatValue = 50 / textureScale; // Use tileSize (50)
-                            loadedTexture.repeat.set(repeatValue, repeatValue);
+                            // Don't set repeat here, let buildRoom handle it based on room size
+                            // const textureScale = 2;
+                            // const repeatValue = 50 / textureScale; // Use default tileSize (50) for now
+                            // loadedTexture.repeat.set(repeatValue, repeatValue);
                         }
-                        resolve(loadedTexture); // Resolve with the processed texture
+                        resolve(loadedTexture);
                     },
                     undefined, // onProgress
                     (err) => {
-                        console.error(`Error loading texture from URL ${result.url} for ${context}:`, err);
-                        reject(new Error(`Failed to load texture image for ${context}`)); // Reject on load error
+                        console.error(`Error loading generated texture from URL ${result.url} for ${context}:`, err);
+                        reject(new Error(`Failed to load generated texture image for ${context}`));
                     }
                 );
             });
-            return texture; // Return the successfully loaded and processed texture
+            return texture;
 
         } catch (error) {
             console.error(`Texture generation/loading failed for ${context}:`, error);
-            // Fallback to placeholder only for essential types here, otherwise return null
-            if (context === 'floor') {
-                console.warn(`Falling back to placeholder texture for ${context}.`);
-                return this.createPlaceholderTexture(DEFAULT_FLOOR_PLACEHOLDER_COLOR);
-            } else if (context === 'wall') { // Only essential if indoor, handled later
-                console.warn(`Falling back to placeholder texture for ${context}.`);
-                return this.createPlaceholderTexture(DEFAULT_WALL_PLACEHOLDER_COLOR);
-            } else if (context === 'ceiling') { // Only essential if indoor, handled later
-                console.warn(`Falling back to placeholder texture for ${context}.`);
-                return this.createPlaceholderTexture(DEFAULT_CEILING_PLACEHOLDER_COLOR);
-            }
-            // Skybox failure results in null, handled by WorldManager background setting
+             // Return null, placeholder creation is handled in generateRoomData using textureManager
             return null;
         }
     }
@@ -240,34 +236,5 @@ export class RoomGenerator {
         texture.image = canvas;
         texture.needsUpdate = true;
         console.log(`Processed skybox seam with fog (Canvas: ${canvas.width}x${canvas.height})`);
-    }
-
-    createPlaceholderTexture(color = '#FF00FF') { // Default to magenta
-        console.warn(`Creating placeholder texture with color ${color}.`);
-        const canvas = document.createElement('canvas');
-        canvas.width = 64;
-        canvas.height = 64;
-        const context = canvas.getContext('2d');
-
-        // Simple checkerboard pattern
-        context.fillStyle = color;
-        context.fillRect(0, 0, 64, 64);
-        context.fillStyle = 'rgba(0,0,0,0.15)'; // Slightly darker shade
-        for (let i = 0; i < 4; i++) {
-            for (let j = 0; j < 4; j++) {
-                if ((i + j) % 2 === 0) {
-                    context.fillRect(i * 16, j * 16, 16, 16);
-                }
-            }
-        }
-
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.wrapS = THREE.RepeatWrapping;
-        texture.wrapT = THREE.RepeatWrapping;
-        const textureScale = 2;
-        const repeatValue = 50 / textureScale;
-        texture.repeat.set(repeatValue, repeatValue);
-        texture.needsUpdate = true; // Ensure canvas is uploaded to GPU
-        return texture;
     }
 }
