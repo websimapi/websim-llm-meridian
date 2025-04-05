@@ -96,7 +96,6 @@ async function initializeMultiplayer() {
                     playerRep.mesh.position.set(data.x, data.y, data.z);
                     playerRep.mesh.rotation.y = data.yaw;
 
-                    const playerRep = otherPlayers.get(clientId);
                     const expectedUsername = peerInfo?.username || `User ${clientId.substring(0, 4)}`;
                     if (playerRep && playerRep.label.element.textContent !== expectedUsername) {
                         playerRep.label.element.textContent = expectedUsername;
@@ -163,13 +162,14 @@ async function initializeMultiplayer() {
 
     const initialPresence = room.presence[room.clientId] || {};
     const initialPlayerPos = playerController.getPlayerPosition();
+    const initialPlayerRot = playerController.getRotation();
     room.updatePresence({
         ...initialPresence,
         x: initialPlayerPos.x,
         y: initialPlayerPos.y,
         z: initialPlayerPos.z,
-        yaw: playerController.yawObject.rotation.y,
-        pitch: playerController.pitchObject.rotation.x,
+        yaw: initialPlayerRot.y,
+        pitch: initialPlayerRot.x,
         currentRoomId: initialPresence.currentRoomId
     });
 }
@@ -178,8 +178,12 @@ function removePlayerAvatar(clientId) {
     if (otherPlayers.has(clientId)) {
         const playerRep = otherPlayers.get(clientId);
         console.log("Removing player:", clientId);
-        if (playerRep.label) playerRep.mesh.remove(playerRep.label);
-        if (playerRep.mesh) scene.remove(playerRep.mesh);
+        if (playerRep.label && playerRep.mesh) {
+             playerRep.mesh.remove(playerRep.label);
+        }
+        if (playerRep.mesh && playerRep.mesh.parent) {
+            playerRep.mesh.parent.remove(playerRep.mesh);
+        }
         otherPlayers.delete(clientId);
     }
 }
@@ -189,7 +193,9 @@ function animate() {
 
     const delta = playerController.clock.getDelta();
 
-    playerController.update(delta);
+    if (document.pointerLockElement === document.body || playerController.isMoving()) {
+        playerController.update(delta);
+    }
 
     worldManager.update(playerController.getPlayerPosition());
 
