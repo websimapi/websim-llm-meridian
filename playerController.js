@@ -1,15 +1,23 @@
 import * as THREE from 'three';
 
 export class PlayerController {
-    constructor(camera, scene, worldManager, uiManager) {
+    constructor(camera, scene, worldManager, uiManager, room) {
         this.camera = camera;
         this.scene = scene;
         this.worldManager = worldManager;
         this.uiManager = uiManager;
+        this.room = room;
 
         this.velocity = new THREE.Vector3();
         this.moveSpeed = 10.0;
         this.lookSpeed = 0.002;
+
+        this.lastPosition = new THREE.Vector3();
+        this.lastYaw = 0;
+        this.lastPitch = 0;
+        this.updateThreshold = 0.01;
+        this.updateInterval = 100;
+        this.lastUpdateTime = 0;
 
         this.moveForward = false;
         this.moveBackward = false;
@@ -98,6 +106,7 @@ export class PlayerController {
     }
 
     update(delta) {
+        const now = performance.now();
         this.velocity.x = 0;
         this.velocity.y = 0;
         this.velocity.z = 0;
@@ -115,13 +124,43 @@ export class PlayerController {
         this.yawObject.translateZ(this.velocity.z);
         this.yawObject.position.y += this.velocity.y;
 
-        const halfSize = this.worldManager.tileSize / 2 - 0.5;
+        const currentRoomId = this.room.presence[this.room.clientId]?.currentRoomId;
+        let halfSize = 25;
+        if (currentRoomId && this.room.roomState.rooms && this.room.roomState.rooms[currentRoomId]) {
+            const roomData = this.room.roomState.rooms[currentRoomId];
+            halfSize = (roomData.structure?.dimensions?.width || this.worldManager.tileSize) / 2 - 0.5;
+        }
+
         this.yawObject.position.x = Math.max(-halfSize, Math.min(halfSize, this.yawObject.position.x));
         this.yawObject.position.z = Math.max(-halfSize, Math.min(halfSize, this.yawObject.position.z));
 
         const playerHeight = 1.6;
-        if (this.yawObject.position.y < playerHeight) {
-            this.yawObject.position.y = playerHeight;
+        this.yawObject.position.y = Math.max(playerHeight, this.yawObject.position.y);
+
+        const positionChanged = this.yawObject.position.distanceToSquared(this.lastPosition) > this.updateThreshold * this.updateThreshold;
+        const rotationChanged = Math.abs(this.yawObject.rotation.y - this.lastYaw) > this.updateThreshold ||
+                                Math.abs(this.pitchObject.rotation.x - this.lastPitch) > this.updateThreshold;
+
+        if ((positionChanged || rotationChanged) || (now - this.lastUpdateTime > this.updateInterval)) {
+            this.sendPresenceUpdate();
+            this.lastPosition.copy(this.yawObject.position);
+            this.lastYaw = this.yawObject.rotation.y;
+            this.lastPitch = this.pitchObject.rotation.x;
+            this.lastUpdateTime = now;
+        }
+    }
+
+    sendPresenceUpdate() {
+        if (this.room && this.room.clientId) {
+            const currentPresence = this.room.presence[this.room.clientId] || {};
+            this.room.updatePresence({
+                x: this.yawObject.position.x,
+                y: this.yawObject.position.y,
+                z: this.yawObject.position.z,
+                yaw: this.yawObject.rotation.y,
+                pitch: this.pitchObject.rotation.x,
+                currentRoomId: currentPresence.currentRoomId || null
+            });
         }
     }
 
@@ -129,12 +168,19 @@ export class PlayerController {
         return this.yawObject.position;
     }
 
-    resetPosition(position = new THREE.Vector3(0, 1.6, 5)) {
+    resetPosition(position = new THREE.Vector3(0, 1.6, 5), rotation = { yaw: 0, pitch: 0 }) {
         this.yawObject.position.copy(position);
-        this.yawObject.rotation.y = 0;
-        this.pitchObject.rotation.x = 0;
+        this.yawObject.rotation.y = rotation.yaw;
+        this.pitchObject.rotation.x = rotation.pitch;
+
         this.velocity.set(0, 0, 0);
         this.moveForward = this.moveBackward = this.moveLeft = this.moveRight = this.moveUp = this.moveDown = false;
         console.log("Player position reset to", position);
+
+        this.sendPresenceUpdate();
+        this.lastPosition.copy(this.yawObject.position);
+        this.lastYaw = this.yawObject.rotation.y;
+        this.lastPitch = this.pitchObject.rotation.x;
+        this.lastUpdateTime = performance.now();
     }
 }

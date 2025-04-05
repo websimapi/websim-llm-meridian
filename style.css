@@ -387,3 +387,100 @@ body {
 #minimap-controls button:active {
     background-color: rgba(60, 60, 60, 0.9);
 }
+
+.player-avatar {
+    width: 10px;
+    height: 10px;
+    background-color: blue;
+    border-radius: 50%;
+    position: absolute;
+}
+
+.player-label {
+    color: white;
+    background-color: rgba(0, 0, 0, 0.6);
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 10px;
+    position: absolute; 
+    white-space: nowrap;
+    transform: translate(-50%, -150%); 
+    pointer-events: none; 
+    z-index: 10;
+    text-shadow: 1px 1px 1px black;
+}
+
+#chat-container {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60%;
+    max-width: 800px;
+    background-color: rgba(40, 40, 40, 0.85);
+    border-radius: 8px;
+    padding: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    z-index: 100;
+    border: 1px solid rgba(100, 100, 100, 0.5);
+    display: flex;
+    flex-direction: column;
+    max-height: 200px; 
+}
+
+#chat-messages {
+    flex-grow: 1;
+    overflow-y: auto;
+    margin-bottom: 10px;
+    font-size: 0.9em;
+    line-height: 1.4;
+    color: #eee;
+}
+
+#chat-messages::-webkit-scrollbar {
+    width: 6px;
+}
+#chat-messages::-webkit-scrollbar-track {
+    background: rgba(30, 30, 30, 0.5);
+    border-radius: 3px;
+}
+#chat-messages::-webkit-scrollbar-thumb {
+    background: rgba(100, 100, 100, 0.7);
+    border-radius: 3px;
+}
+#chat-messages::-webkit-scrollbar-thumb:hover {
+    background: rgba(130, 130, 130, 0.8);
+}
+
+.chat-message {
+    margin-bottom: 6px;
+    padding: 2px 4px;
+}
+.chat-message .username {
+    font-weight: bold;
+    margin-right: 5px;
+    color: #6fa8dc; 
+}
+.chat-message .system {
+    font-style: italic;
+    color: #aaa;
+}
+.chat-message .error {
+    font-style: italic;
+    color: #d9534f;
+}
+
+#chat-input {
+    width: calc(100% - 10px); 
+    padding: 8px 10px;
+    border: 1px solid #666;
+    background-color: #333;
+    color: white;
+    border-radius: 4px;
+    font-size: 0.9em;
+    box-sizing: border-box; 
+}
+#chat-input:focus {
+    outline: none;
+    border-color: #888;
+}
