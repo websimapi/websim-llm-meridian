@@ -23,41 +23,31 @@ export class Minimap {
             console.warn("Minimap canvas not found, creating one.");
             this.minimapCanvas = document.createElement('canvas');
             this.minimapCanvas.id = 'minimap-canvas';
-            Object.assign(this.minimapCanvas.style, {
+            this.minimapCanvas.width = 160; // Set resolution
+            this.minimapCanvas.height = 160; // Set resolution
+             Object.assign(this.minimapCanvas.style, {
                 width: '100%', height: '100%', display: 'block', flexGrow: '1'
             });
             this.minimapContainer.appendChild(this.minimapCanvas);
+        } else {
+             // Ensure canvas resolution matches if element exists
+            this.minimapCanvas.width = this.minimapContainer.offsetWidth > 0 ? this.minimapContainer.offsetWidth : 160;
+            this.minimapCanvas.height = this.minimapContainer.offsetHeight > 0 ? this.minimapContainer.offsetHeight : 160;
         }
-        // Set initial canvas resolution after element is confirmed/created
-        this.updateCanvasSize();
+
 
         this.ctx = this.minimapCanvas.getContext('2d');
         this.mapScale = 1.5; // Initial zoom level
-        this.minZoom = 0.5;
-        this.maxZoom = 4.0; // Allow closer zoom
+        this.minZoom = 0.5; // Minimum zoom level
+        this.maxZoom = 4.0; // Maximum zoom level
         this.playerMarkerSize = 3;
         this.playerDirectionLength = 10;
 
-        this.floorTexture = null;
-        this.textureRepeat = new THREE.Vector2(1, 1); // Store texture repeat value
-        this.patternNeedsUpdate = true; // Flag to recreate pattern on texture/scale change
-        this.texturePattern = null; // The canvas pattern object
+        this.floorTexture = null; // Cache the current floor texture
+        this.patternNeedsUpdate = true; // Signal pattern needs recreation
+        this.texturePattern = null; // Pattern cache
 
         this.initControls();
-    }
-
-    updateCanvasSize() {
-        const currentWidth = this.minimapContainer.offsetWidth;
-        const currentHeight = this.minimapContainer.offsetHeight;
-        const width = currentWidth > 0 ? currentWidth : 160;
-        const height = currentHeight > 0 ? currentHeight : 160;
-
-        if (this.minimapCanvas.width !== width || this.minimapCanvas.height !== height) {
-            this.minimapCanvas.width = width;
-            this.minimapCanvas.height = height;
-            console.log(`Minimap canvas resized to ${width}x${height}`);
-            this.patternNeedsUpdate = true; // Canvas size change might affect rendering
-        }
     }
 
     initControls() {
@@ -69,217 +59,193 @@ export class Minimap {
             zoomOutButton.addEventListener('click', () => this.zoomOut());
         } else {
             console.warn("Minimap zoom controls not found.");
-            // Optionally create controls dynamically if needed
+             // Optionally create controls dynamically if needed
         }
     }
 
     zoomIn() {
-        this.mapScale = Math.min(this.maxZoom, this.mapScale * 1.25); // Slightly faster zoom
-        this.patternNeedsUpdate = true; // Pattern transform depends on scale
+        this.mapScale = Math.min(this.maxZoom, this.mapScale * 1.2);
         console.log("Zoom In, new scale:", this.mapScale);
     }
 
     zoomOut() {
-        this.mapScale = Math.max(this.minZoom, this.mapScale / 1.25); // Slightly faster zoom
-        this.patternNeedsUpdate = true; // Pattern transform depends on scale
-        console.log("Zoom Out, new scale:", this.mapScale);
+        this.mapScale = Math.max(this.minZoom, this.mapScale / 1.2);
+         console.log("Zoom Out, new scale:", this.mapScale);
     }
 
     update(playerPosition) {
-        this.updateCanvasSize(); // Ensure canvas resolution is up-to-date
+        // Ensure canvas size is updated if container resized (e.g., dev tools open/close)
+        const currentWidth = this.minimapContainer.offsetWidth;
+        const currentHeight = this.minimapContainer.offsetHeight;
+        if (this.minimapCanvas.width !== currentWidth || this.minimapCanvas.height !== currentHeight) {
+            this.minimapCanvas.width = currentWidth > 0 ? currentWidth : 160;
+            this.minimapCanvas.height = currentHeight > 0 ? currentHeight : 160;
+        }
 
-        const canvasWidth = this.minimapCanvas.width;
-        const canvasHeight = this.minimapCanvas.height;
-        const centerX = canvasWidth / 2;
-        const centerY = canvasHeight / 2;
+        const centerX = this.minimapCanvas.width / 2;
+        const centerY = this.minimapCanvas.height / 2;
 
-        // Background clear
-        this.ctx.fillStyle = '#222'; // Dark background
-        this.ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+        // Clear canvas
+        this.ctx.fillStyle = '#222'; // Background color if no texture
+        this.ctx.fillRect(0, 0, this.minimapCanvas.width, this.minimapCanvas.height);
 
-        this.updateFloorTexture(); // Check if floor texture changed
+        // Find and cache the floor texture
+        this.updateFloorTexture();
 
-        // Check if texture is valid and loaded
-        const textureValid = this.floorTexture && this.floorTexture.image &&
-                             (this.floorTexture.image.complete || this.floorTexture.image instanceof HTMLCanvasElement || this.floorTexture.image instanceof ImageBitmap) &&
-                             this.floorTexture.image.width > 0 && this.floorTexture.image.height > 0;
-
-        if (textureValid) {
+        // Draw Floor Texture if available
+        if (this.floorTexture && this.floorTexture.image && (this.floorTexture.image.complete || this.floorTexture.image instanceof HTMLCanvasElement || this.floorTexture.image instanceof ImageBitmap)) {
             try {
                 const textureImage = this.floorTexture.image;
-                const tileSize = this.worldManager.tileSize; // World size of the floor plane
+                const tileSize = this.worldManager.tileSize; // Typically 50
+                const repeatX = this.floorTexture.repeat.x;
+                const repeatY = this.floorTexture.repeat.y;
 
-                // Recreate pattern only if texture changed, scale changed, or canvas resized
-                if (!this.texturePattern || this.patternNeedsUpdate) {
-                    this.texturePattern = this.ctx.createPattern(textureImage, 'repeat');
-                    if (!this.texturePattern) {
-                        console.error("Failed to create canvas pattern.");
-                        this.patternNeedsUpdate = false; // Don't retry constantly if it fails
-                    } else {
-                        console.log(`Minimap pattern created/updated. Texture repeats: ${this.textureRepeat.x},${this.textureRepeat.y}. Map scale: ${this.mapScale}`);
-                        this.patternNeedsUpdate = false; // Reset flag
-                    }
-                }
+                // Calculate the world area visible on the minimap
+                const viewWidthWorld = this.minimapCanvas.width / this.mapScale;
+                const viewHeightWorld = this.minimapCanvas.height / this.mapScale;
 
-                if (this.texturePattern) {
-                    this.ctx.save();
+                // Calculate the top-left world coordinates visible centered on the player
+                const worldOriginX = playerPosition.x - viewWidthWorld / 2;
+                const worldOriginZ = playerPosition.z - viewHeightWorld / 2;
 
-                    // 1. Center the view on the canvas center
-                    this.ctx.translate(centerX, centerY);
+                // --- Draw tiled texture ---
+                // Save context state for clipping and transformations
+                this.ctx.save();
 
-                    // 2. Apply the zoom scale
-                    this.ctx.scale(this.mapScale, this.mapScale);
+                // We want to draw the texture such that the player's position corresponds to the center of the minimap
+                // Translate the canvas so the player's world position aligns with the center
+                this.ctx.translate(centerX, centerY);
+                // Scale the canvas according to the zoom level
+                this.ctx.scale(this.mapScale, this.mapScale);
+                // Translate back by the player's world position to center the view on the player
+                this.ctx.translate(-playerPosition.x, -playerPosition.z);
 
-                    // 3. Translate the view based on player position (negative)
-                    // This makes the world move under the player marker
-                    this.ctx.translate(-playerPosition.x, -playerPosition.z);
+                 // Draw the texture - Use createPattern for repeating background
+                 // Need to ensure the pattern origin is correctly aligned with the world origin
+                 // (0,0) in world space corresponds to the center of the tile (plane)
+                 // Texture coordinates (u,v) go from 0 to 1 across the texture image.
+                 // World coordinates (x,z) go from -tileSize/2 to +tileSize/2.
+                 // Mapping: u = (x / tileSize + 0.5) * repeatX, v = (z / tileSize + 0.5) * repeatY
 
-                    // --- Apply Pattern Transform ---
-                    // Calculate the scaling required for the pattern itself so that
-                    // one repetition of the texture drawn on the canvas corresponds
-                    // to the correct size in world units.
-                    const worldUnitsPerTextureRepeatX = tileSize / this.textureRepeat.x;
-                    const worldUnitsPerTextureRepeatY = tileSize / this.textureRepeat.y;
+                 // Create pattern *once* if texture image is valid
+                 // Check if pattern needs recreating (texture changed or not created yet)
+                 if (!this.texturePattern || this.patternNeedsUpdate) {
+                     if(textureImage.width > 0 && textureImage.height > 0) { // Prevent error with 0-size canvas/image
+                         this.texturePattern = this.ctx.createPattern(textureImage, 'repeat');
+                         this.patternNeedsUpdate = false;
+                     } else {
+                         this.texturePattern = null; // Cannot create pattern
+                     }
+                 }
 
-                    // Scale the pattern so that its native size (textureImage.width/height)
-                    // maps to the world size it represents.
-                    const patternScaleX = worldUnitsPerTextureRepeatX / textureImage.width;
-                    const patternScaleY = worldUnitsPerTextureRepeatY / textureImage.height;
+                 if (this.texturePattern) {
+                     // Set the fill style to the pattern
+                     this.ctx.fillStyle = this.texturePattern;
 
-                    // Create a matrix for the pattern transformation (Scale only)
-                    // The translation is handled by the main context transform
-                    const matrix = new DOMMatrix();
-                    matrix.scaleSelf(patternScaleX, patternScaleY);
-                    this.texturePattern.setTransform(matrix);
-                    // -----------------------------
+                     // Adjust the pattern's transformation matrix to align it correctly
+                     // Texture scale factor: how many world units per texture pixel
+                     const texScaleX = tileSize / repeatX / textureImage.width;
+                     const texScaleY = tileSize / repeatY / textureImage.height;
 
-                    this.ctx.fillStyle = this.texturePattern;
+                     // Create a matrix to scale and translate the pattern
+                     const matrix = new DOMMatrix();
+                     // The pattern needs to be scaled so its repetition matches the world coordinates
+                     matrix.scaleSelf(texScaleX, texScaleY);
+                     // Translate the pattern origin: UV (0,0) should correspond to world (-tileSize/2, -tileSize/2)
+                     matrix.translateSelf(-tileSize / 2, -tileSize / 2);
 
-                    // Draw the pattern covering the floor area
-                    // The floor is centered at (0,0) world coords, size tileSize x tileSize
-                    const halfSize = tileSize / 2;
-                    // The rectangle is drawn in the world coordinate space (transformed by scale and player pos)
-                    this.ctx.fillRect(-halfSize, -halfSize, tileSize, tileSize);
+                     // Apply the matrix to the pattern *if setTransform is supported*
+                     // Note: Browser support for setTransform on patterns varies. Might not work perfectly.
+                      try {
+                          if (this.texturePattern.setTransform) {
+                               this.texturePattern.setTransform(matrix);
+                          } else {
+                              // Fallback: draw image manually tiled (more complex, skip for now)
+                              console.warn("CanvasPattern.setTransform not supported. Minimap texture alignment might be off.");
+                          }
+                      } catch (e) {
+                           console.warn("Error setting pattern transform:", e);
+                      }
 
-                    this.ctx.restore();
-                } else {
-                    // Fallback grey rect if pattern failed creation
-                     this.drawFallbackBounds(playerPosition, centerX, centerY, '#444');
-                }
+
+                     // Fill the entire transformed rectangle representing the room floor
+                     // The fill covers the area defined by the current transformation matrix
+                     this.ctx.fillRect(-tileSize / 2, -tileSize / 2, tileSize, tileSize);
+
+                 } else {
+                     // Fallback: Draw grey rectangle if pattern failed
+                     this.ctx.fillStyle = '#555';
+                     this.ctx.fillRect(-tileSize / 2, -tileSize / 2, tileSize, tileSize);
+                 }
+
+
+                // Restore context state (removes transformations and clipping)
+                this.ctx.restore();
 
             } catch (error) {
                 console.error("Error drawing minimap texture:", error);
-                 this.drawFallbackBounds(playerPosition, centerX, centerY, '#533'); // Error color
+                // Draw fallback grey rectangle in case of error
+                 this.ctx.fillStyle = '#444'; // Darker grey on error
+                 const roomWidthOnMap = this.worldManager.tileSize * this.mapScale;
+                 const roomDepthOnMap = this.worldManager.tileSize * this.mapScale;
+                 const roomRectX = centerX - roomWidthOnMap / 2 - (playerPosition.x * this.mapScale); // Adjust for player offset
+                 const roomRectY = centerY - roomDepthOnMap / 2 - (playerPosition.z * this.mapScale); // Adjust for player offset
+                this.ctx.fillRect(roomRectX, roomRectY, roomWidthOnMap, roomDepthOnMap);
             }
         } else {
-            // Draw room bounds outline if texture is unavailable or still loading
-            this.drawFallbackBounds(playerPosition, centerX, centerY);
+             // Optional: Draw room bounds outline if texture is unavailable
+             this.ctx.strokeStyle = '#666';
+             this.ctx.lineWidth = 1;
+             const roomWidthOnMap = this.worldManager.tileSize * this.mapScale;
+             const roomDepthOnMap = this.worldManager.tileSize * this.mapScale;
+             const roomRectX = centerX - (playerPosition.x * this.mapScale) - roomWidthOnMap / 2; // Center based on player
+             const roomRectY = centerY - (playerPosition.z * this.mapScale) - roomDepthOnMap / 2; // Center based on player
+             this.ctx.strokeRect(roomRectX, roomRectY, roomWidthOnMap, roomDepthOnMap);
         }
 
-        // --- Draw Player Marker and Direction (on top, not affected by world transforms) ---
-        this.ctx.save();
-        this.ctx.translate(centerX, centerY); // Center coordinates
 
-        // Player Marker (circle)
+        // Draw Player Marker (always at the center)
         this.ctx.fillStyle = '#4CAF50'; // Green marker
         this.ctx.beginPath();
-        this.ctx.arc(0, 0, this.playerMarkerSize, 0, Math.PI * 2);
+        this.ctx.arc(centerX, centerY, this.playerMarkerSize, 0, Math.PI * 2);
         this.ctx.fill();
 
-        // Player Direction Line (triangle or line)
+        // Draw Player Direction Line
         if (window.game && window.game.playerController) {
             const playerYaw = window.game.playerController.yawObject.rotation.y;
-            // Calculate direction vector based on yaw
-            // In 2D top-down, +Z is often down, +X is right. Yaw 0 faces -Z.
-            const dirX = Math.sin(playerYaw);
-            const dirZ = Math.cos(playerYaw);
 
-             // Draw a triangle pointer
-             this.ctx.fillStyle = '#4CAF50';
-             this.ctx.beginPath();
-             // Tip of the triangle points in the look direction
-             const tipX = 0 - dirX * this.playerDirectionLength;
-             const tipY = 0 - dirZ * this.playerDirectionLength; // Z maps to Y in 2D canvas
-             // Base points perpendicular to look direction
-             const baseX1 = 0 + dirZ * (this.playerMarkerSize);
-             const baseY1 = 0 - dirX * (this.playerMarkerSize);
-             const baseX2 = 0 - dirZ * (this.playerMarkerSize);
-             const baseY2 = 0 + dirX * (this.playerMarkerSize);
+            // Direction line points opposite to camera look direction in top-down view
+            const endX = centerX - Math.sin(playerYaw) * this.playerDirectionLength;
+            const endY = centerY - Math.cos(playerYaw) * this.playerDirectionLength;
 
-             this.ctx.moveTo(tipX, tipY);
-             this.ctx.lineTo(baseX1, baseY1);
-             this.ctx.lineTo(baseX2, baseY2);
-             this.ctx.closePath();
-             this.ctx.fill();
-
-            // // Alternative: Simple Line
-            // const endX = centerX - dirX * this.playerDirectionLength;
-            // const endY = centerY - dirZ * this.playerDirectionLength;
-            // this.ctx.strokeStyle = '#4CAF50'; // Green line
-            // this.ctx.lineWidth = 2;
-            // this.ctx.beginPath();
-            // this.ctx.moveTo(centerX, centerY);
-            // this.ctx.lineTo(endX, endY);
-            // this.ctx.stroke();
+            this.ctx.strokeStyle = '#4CAF50'; // Green line
+            this.ctx.lineWidth = 2;
+            this.ctx.beginPath();
+            this.ctx.moveTo(centerX, centerY);
+            this.ctx.lineTo(endX, endY);
+            this.ctx.stroke();
         }
-        this.ctx.restore(); // Restore context after drawing player stuff
-    }
-
-    // Helper to draw fallback room bounds centered on player
-    drawFallbackBounds(playerPosition, centerX, centerY, color = '#666') {
-        this.ctx.save();
-        this.ctx.strokeStyle = color;
-        this.ctx.lineWidth = 1;
-
-        // Apply transforms: center, scale, move by player pos
-        this.ctx.translate(centerX, centerY);
-        this.ctx.scale(this.mapScale, this.mapScale);
-        this.ctx.translate(-playerPosition.x, -playerPosition.z);
-
-        // Draw the rectangle representing the tile centered at world origin (0,0)
-        const halfSize = this.worldManager.tileSize / 2;
-        this.ctx.strokeRect(-halfSize, -halfSize, this.worldManager.tileSize, this.worldManager.tileSize);
-
-        this.ctx.restore();
     }
 
     updateFloorTexture() {
         const worldManager = window.game?.worldManager;
-        // Ensure currentRoomObjects and its children are accessible
-        if (!worldManager || !worldManager.currentRoomObjects || !worldManager.currentRoomObjects.children) {
-            if (this.floorTexture !== null) {
-                 console.log("Minimap clearing floor texture (no room objects).");
-                this.patternNeedsUpdate = true;
-                this.floorTexture = null;
-                this.texturePattern = null;
-                this.textureRepeat.set(1, 1);
-            }
+        if (!worldManager || !worldManager.currentRoomObjects) {
+             if (this.floorTexture !== null) this.patternNeedsUpdate = true;
+            this.floorTexture = null;
             return;
         }
 
+        // Find the floor mesh (assuming it's a PlaneGeometry directly in currentRoomObjects)
         const floorMesh = worldManager.currentRoomObjects.children.find(
-             child => child instanceof THREE.Mesh &&
-                      child.geometry instanceof THREE.PlaneGeometry &&
-                      Math.abs(child.rotation.x - (-Math.PI / 2)) < 0.01 // More robust check for floor rotation
+            child => child instanceof THREE.Mesh && child.geometry instanceof THREE.PlaneGeometry
         );
 
         const newTexture = floorMesh?.material?.map || null;
-        const newRepeat = floorMesh?.material?.map?.repeat || new THREE.Vector2(1, 1);
 
-        // Check if texture object itself or its repeat value changed
-        if (newTexture !== this.floorTexture || !newRepeat.equals(this.textureRepeat)) {
-            console.log("Minimap floor texture source or repeat changed.");
+        if (newTexture !== this.floorTexture) {
             this.floorTexture = newTexture;
-            this.texturePattern = null; // Clear old pattern immediately
-            this.patternNeedsUpdate = true; // Signal that pattern needs recreation/transform update
-
-            // Store the repeat value from the texture
-            if (this.floorTexture && this.floorTexture.repeat) {
-                this.textureRepeat.copy(this.floorTexture.repeat);
-            } else {
-                this.textureRepeat.set(1, 1); // Default if no texture or repeat property
-            }
-             console.log("Minimap updated texture repeat:", this.textureRepeat.x, this.textureRepeat.y);
+            this.patternNeedsUpdate = true; // Signal that pattern needs recreation
+            console.log("Minimap floor texture updated.");
         }
     }
 }
