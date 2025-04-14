@@ -18,6 +18,9 @@ export class ObjectHighlighter {
         this.isObjectInteractable = true;
         this.isPointerDown = false;
         
+        // Track marker visibility
+        this.markersVisible = true;
+        
         this.initUI();
         this.initInteractions();
     }
@@ -56,20 +59,77 @@ export class ObjectHighlighter {
             const z = radius * Math.sin(theta) * Math.cos(phi);
             
             // Create marker
-            const markerGeometry = new THREE.SphereGeometry(1, 8, 8);
-            const markerMaterial = new THREE.MeshBasicMaterial({ 
+            const geometry = new THREE.TorusGeometry(getMarkerScale(obj.position.size) * 0.8, 0.5, 8, 24);
+            const material = new THREE.MeshBasicMaterial({ 
                 color: 0xff0000,
                 transparent: true,
                 opacity: 0.7,
                 depthTest: false
             });
-            const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+            const marker = new THREE.Mesh(geometry, material);
             marker.position.set(x, y, z);
             marker.userData.objectId = obj.id;
+            marker.userData.objectName = obj.name;
             marker.scale.setScalar(getMarkerScale(obj.position.size));
+            
+            // Make marker always face the camera
+            marker.lookAt(0, 0, 0);
+            
+            // Add text label above marker
+            this.addMarkerLabel(marker, obj.name, obj.position.size);
             
             this.objectMarkers.add(marker);
         });
+        
+        // Helper function for scale based on size
+        function getMarkerScale(size) {
+            switch(size.toLowerCase()) {
+                case 'large': return 5;
+                case 'medium': return 3;
+                case 'small': return 2;
+                default: return 3;
+            }
+        }
+    }
+    
+    addMarkerLabel(marker, text, size) {
+        // Create canvas for the text
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        
+        // Setup text style
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 24px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, canvas.width/2, canvas.height/2);
+        
+        // Create texture and material
+        const texture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            depthTest: false,
+            side: THREE.DoubleSide
+        });
+        
+        // Create plane for label
+        const labelGeometry = new THREE.PlaneGeometry(10, 2.5);
+        const label = new THREE.Mesh(labelGeometry, material);
+        
+        // Position label above marker
+        let offsetY = getMarkerScale(size) * 1.2;
+        label.position.set(0, offsetY, 0);
+        
+        // Make label face the camera
+        label.lookAt(0, 0, 0);
+        
+        // Add label as child of marker
+        marker.add(label);
         
         // Helper function for scale based on size
         function getMarkerScale(size) {
@@ -88,6 +148,23 @@ export class ObjectHighlighter {
         this.lastUpdateTime = now;
         
         if (this.detectedObjects.length === 0) return;
+        
+        // Update orientation of all markers to face camera
+        this.objectMarkers.children.forEach(marker => {
+            if (marker.children.length > 0) {
+                // Make the ring face the camera
+                marker.lookAt(this.camera.position);
+                
+                // Make the label face the camera (should already be facing origin)
+                // But ensure it's readable by aligning with camera up vector
+                const label = marker.children[0];
+                if (label) {
+                    label.lookAt(this.camera.position);
+                    // Align with camera up vector
+                    label.up.copy(this.camera.up);
+                }
+            }
+        });
         
         // Get camera direction vector
         const cameraDirection = new THREE.Vector3(0, 0, -1);
@@ -181,6 +258,9 @@ export class ObjectHighlighter {
             this.highlightElement.style.left = `${screenPosition.x - size/2}px`;
             this.highlightElement.style.top = `${screenPosition.y - size/2}px`;
             
+            // Add destination label to highlight
+            this.highlightElement.setAttribute('data-label', object.name);
+            
             // Position info panel near highlight but ensure it stays on screen
             const panelWidth = 300;
             const panelHeight = 150; // Increased for interact hint
@@ -251,6 +331,17 @@ export class ObjectHighlighter {
         this.infoPanel.appendChild(interactElement);
         document.body.appendChild(this.infoPanel);
         
+        // Create highlight controls
+        const controlsPanel = document.createElement('div');
+        controlsPanel.className = 'object-highlight-controls';
+        
+        const toggleButton = document.createElement('button');
+        toggleButton.textContent = 'Toggle Object Markers';
+        toggleButton.onclick = () => this.toggleMarkersVisibility();
+        controlsPanel.appendChild(toggleButton);
+        
+        document.body.appendChild(controlsPanel);
+        
         // Initially hide elements
         this.hideObjectHighlight();
     }
@@ -275,12 +366,38 @@ export class ObjectHighlighter {
             }
         });
         
-        // Handle return beam interaction
+        // Handle return beam interaction with both E key and mouse click
         document.addEventListener('keydown', (event) => {
             if (event.code === 'KeyE' && window.game?.worldManager?.returnBeam?.visible) {
                 this.handleReturnBeamInteraction();
             }
         });
+        
+        // Add click detection for return beam
+        document.addEventListener('click', (event) => {
+            // Only if pointer lock is not active (so UI clicks work)
+            if (document.pointerLockElement !== document.body) {
+                this.checkReturnBeamClick(event);
+            }
+        });
+    }
+    
+    checkReturnBeamClick(event) {
+        if (!window.game?.worldManager?.returnBeam?.visible) return;
+        
+        // Create a raycaster from mouse position
+        const mouse = new THREE.Vector2();
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        
+        this.raycaster.setFromCamera(mouse, this.camera);
+        
+        // Check intersection with return beam
+        const intersects = this.raycaster.intersectObject(window.game.worldManager.returnBeam, true);
+        
+        if (intersects.length > 0) {
+            this.handleReturnBeamInteraction();
+        }
     }
     
     handleObjectInteraction(object) {
@@ -312,7 +429,13 @@ export class ObjectHighlighter {
     }
     
     toggleMarkersVisibility(visible) {
-        this.objectMarkers.visible = visible === undefined ? !this.objectMarkers.visible : visible;
+        this.markersVisible = visible === undefined ? !this.markersVisible : visible;
+        this.objectMarkers.visible = this.markersVisible;
+        
+        // Notify about state change
+        if (window.game?.uiManager) {
+            window.game.uiManager.showNotification(`Object markers ${this.markersVisible ? 'visible' : 'hidden'}`);
+        }
     }
     
     dispose() {
