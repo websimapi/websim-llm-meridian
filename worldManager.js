@@ -1,551 +1,381 @@
 import * as THREE from 'three';
 import { RoomGenerator } from './roomGenerator.js';
-import { TextureManager } from './textureManager.js'; 
-import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
 export class WorldManager {
-    constructor(scene, room) {
+    constructor(scene) {
         this.scene = scene;
-        this.room = room;
-        this.textureManager = new TextureManager(); 
-        this.roomGenerator = new RoomGenerator(); 
-        this.currentRoomObjects = null;
+        this.currentRoomObjects = null; // Keep track of meshes specific to the current room
+        this.roomGenerator = new RoomGenerator();
         this.loadingScreen = document.getElementById('loading-screen');
-        this.worldObjects = new THREE.Group();
+        this.worldObjects = new THREE.Group(); // Group to hold all world geometry/objects
         this.scene.add(this.worldObjects);
-        this.activeTiles = new Map(); 
-        this.tileSize = 50; 
+        this.activeTiles = new Map(); // Store currently active world tiles/chunks
+        this.tileSize = 50;
+        this.rooms = []; // Store all generated rooms data
+        this.currentRoomIndex = -1; // Track the currently active room
 
-        this.defaultOutdoorBg = new THREE.Color(0x87ceeb);
-        this.defaultIndoorBg = new THREE.Color(0x111111);
-
-        this.isLoading = false;
+        // Default background colors
+        this.defaultOutdoorBg = new THREE.Color(0x87ceeb); // Sky blue
+        this.defaultIndoorBg = new THREE.Color(0x111111); // Dark grey
     }
 
     async generateInitialWorld() {
-        if (this.isLoading) {
-            console.warn("generateInitialWorld called while already loading.");
-            return;
-        }
-        console.log("Generating initial world (checking shared state)...");
+        console.log("Generating initial world...");
         this.showLoading();
-        this.isLoading = true;
         try {
-            const rooms = this.room.roomState.rooms || {};
-            const roomIds = Object.keys(rooms);
-
-            if (roomIds.length > 0) {
-                const sortedRooms = Object.values(rooms).sort((a, b) => (b.timestamp && a.timestamp) ? new Date(b.timestamp) - new Date(a.timestamp) : 0);
-                if (sortedRooms.length > 0) {
-                    const targetRoomId = sortedRooms[0].id;
-                    console.log(`Found existing rooms. Joining most recent room: ${targetRoomId}`);
-                } else {
-                     console.log("Found rooms object but it was empty or invalid, generating initial room.");
-                     // Fall through to generate initial room
-                }
-
-            }
-
-            let targetRoomId = null;
-            let playerStartPosition = new THREE.Vector3(0, 1.6, 5); 
-            if (!targetRoomId) { 
-                console.log("No suitable existing rooms found. Generating initial room...");
-                const initialRoomData = await this.roomGenerator.generateRoomData('A bright, grassy clearing in a fantasy forest, under a blue sky.', 'outdoor');
-                targetRoomId = await this.addRoomToSharedState(initialRoomData);
-                if (!targetRoomId) {
-                    throw new Error("Failed to add initial room to shared state.");
-                }
-                console.log(`Generated initial room with ID: ${targetRoomId}`);
-            }
-
-            if (!targetRoomId) {
-                 throw new Error("Could not determine a target room ID to join.");
-            }
-
-            await this.teleportToRoom(targetRoomId, playerStartPosition);
-
+            const initialRoomData = await this.roomGenerator.generateRoomData('A bright, grassy clearing in a fantasy forest, under a blue sky.', 'outdoor');
+            this.buildRoom(initialRoomData);
+            this.addRoomToCollection(initialRoomData);
         } catch (error) {
-            console.error("Failed to initialize world:", error);
-            this.scene.background = this.defaultOutdoorBg; 
-            if (window.game && window.game.uiManager) {
-                window.game.uiManager.showNotification('Error initializing world.', 'error');
-            }
-            this.hideLoading();
-            this.isLoading = false; 
+            console.error("Failed to generate initial world:", error);
+            this.scene.background = this.defaultOutdoorBg; // Set a fallback background
+            // Potentially show an error to the user
         } finally {
-            console.log("World initialization process complete.");
+            this.hideLoading();
+            console.log("Initial world generated.");
         }
     }
 
-    async createAndJoinNewRoom(prompt, type = 'outdoor') {
-        if (this.isLoading) {
-            console.warn("Already loading/creating a room.");
-            if (window.game && window.game.uiManager) window.game.uiManager.showNotification('Operation already in progress.', 'info');
-            return;
-        }
-        console.log(`Creating new room: ${prompt}, Type: ${type}`);
-        this.showLoading(`Generating ${type} room...`);
-        this.isLoading = true;
+    async loadNewArea(prompt, type = 'outdoor') {
+         console.log(`Loading new area: ${prompt}, Type: ${type}`);
+         this.showLoading();
+         this.clearCurrentRoom();
 
-        try {
+         try {
             const newRoomData = await this.roomGenerator.generateRoomData(prompt, type);
-            const newRoomId = await this.addRoomToSharedState(newRoomData);
-            if (!newRoomId) {
-                throw new Error("Failed to add new room to shared state.");
-            }
-            await this.teleportToRoom(newRoomId);
-
-        } catch (error) {
-            console.error("Error creating new room:", error);
-            if (window.game && window.game.uiManager) window.game.uiManager.showNotification('Failed to create new room.', 'error');
+            this.buildRoom(newRoomData);
+            this.addRoomToCollection(newRoomData);
+         } catch (error) {
+            console.error("Error generating new area:", error);
+             // Set a fallback background based on intended type
+             this.scene.background = type === 'indoor' ? this.defaultIndoorBg : this.defaultOutdoorBg;
+             // Handle error, maybe load a default error room?
+         } finally {
             this.hideLoading();
-            this.isLoading = false;
-        } finally {
-            console.log("New room creation process finished.");
-        }
+            console.log("New area loaded.");
+         }
     }
 
-    async addRoomToSharedState(roomData) {
-        try {
-            console.log("Starting texture upload process...");
-            const textureUploadPromises = Object.entries(roomData.textures)
-                .filter(([key, texture]) => texture && texture.image) 
-                .map(async ([key, texture]) => {
-                    try {
-                        console.log(`Preparing texture '${key}' for upload...`);
-                        let file;
-                        const timestamp = Date.now();
-                        const filename = `${key}_${timestamp}.png`;
+    buildRoom(roomData) {
+        this.currentRoomObjects = new THREE.Group(); // Group for objects of this specific room
 
-                        if (texture.image instanceof HTMLImageElement && !texture.image.complete) {
-                            console.log(`Waiting for image '${key}' to load before upload...`);
-                            await new Promise((resolve, reject) => {
-                                texture.image.onload = resolve;
-                                texture.image.onerror = reject;
-                            });
-                            console.log(`Image '${key}' loaded.`);
-                        }
-
-                        if (texture.image instanceof HTMLCanvasElement) {
-                            console.log(`Converting canvas texture '${key}' to blob...`);
-                            const blob = await new Promise(resolve => texture.image.toBlob(resolve, 'image/png'));
-                            file = new File([blob], filename, { type: 'image/png' });
-                        } else if (texture.image instanceof ImageBitmap) {
-                            console.log(`Converting ImageBitmap texture '${key}' to blob via canvas...`);
-                            const canvas = document.createElement('canvas');
-                            canvas.width = texture.image.width;
-                            canvas.height = texture.image.height;
-                            const ctx = canvas.getContext('2d');
-                            ctx.drawImage(texture.image, 0, 0);
-                            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-                            file = new File([blob], filename, { type: 'image/png' });
-                        } else if (texture.image instanceof HTMLImageElement) {
-                            console.log(`Processing HTMLImageElement texture '${key}' (src type: ${texture.image.src.substring(0,10)})...`);
-                            let blob;
-                            if (texture.image.src.startsWith('data:') || texture.image.src.startsWith('blob:')) {
-                                blob = await fetch(texture.image.src).then(res => res.blob());
-                            } else {
-                                try {
-                                    console.log(`Fetching external image source for '${key}': ${texture.image.src.substring(0, 60)}...`);
-                                    const response = await fetch(texture.image.src, { mode: 'cors' });
-                                    if (!response.ok) throw new Error(`Fetch failed: ${response.statusText}`);
-                                    blob = await response.blob();
-                                    console.log(`Fetch successful for '${key}'.`);
-                                } catch (fetchError) {
-                                    console.error(`Could not fetch texture source for upload (${key}): ${fetchError}. Storing original source URL might fail later.`);
-                                    return { key, url: texture.image.src };
-                                }
-                            }
-                            file = new File([blob], filename, { type: blob.type || 'image/png' });
-
-                        } else {
-                            console.warn(`Unsupported image type for texture key '${key}':`, texture.image);
-                            return { key, url: null }; 
-                        }
-
-                        if (!file) {
-                            console.warn(`Could not create file for texture key '${key}'.`);
-                            return { key, url: null };
-                        }
-
-                        console.log(`Uploading file for texture '${key}' (size: ${file.size})...`);
-                        const url = await websim.upload(file);
-                        console.log(`Upload successful for '${key}', URL: ${url.substring(0,60)}...`);
-                        return { key, url };
-
-                    } catch (uploadError) {
-                        console.error(`Error processing/uploading texture for key ${key}:`, uploadError);
-                        return { key, url: null }; 
-                    } finally {
-                        if (texture) texture.dispose();
-                        console.log(`Disposed THREE.Texture object for key '${key}'.`);
-                    }
-                });
-
-            const uploadedTextures = await Promise.all(textureUploadPromises);
-            console.log("Texture upload process finished.");
-
-            const textureUrls = uploadedTextures.reduce((acc, { key, url }) => {
-                if (url) acc[key] = url;
-                else console.warn(`Texture URL for key '${key}' is null after upload attempt.`);
-                return acc;
-            }, { floor: null, wall: null, ceiling: null, sky: null }); 
-
-            const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-            const roomRecord = {
-                id: roomId,
-                name: roomData.prompt.substring(0,30) + (roomData.prompt.length > 30 ? '...' : ''),
-                prompt: roomData.prompt,
-                type: roomData.type,
-                textureUrls: textureUrls, 
-                timestamp: new Date().toISOString(),
-                structure: roomData.structure,
-                objects: roomData.objects || [],
-                creatorId: this.room.clientId,
-                creatorUsername: this.room.peers[this.room.clientId]?.username || 'Unknown',
-            };
-
-            const existingRooms = this.room.roomState.rooms || {};
-
-            this.room.updateRoomState({
-                rooms: {
-                    ...existingRooms,
-                    [roomId]: roomRecord
-                }
-            });
-
-            console.log(`Room added to shared state with ID: ${roomId}`);
-            return roomId;
-
-        } catch(error) {
-            console.error("Failed to add room to shared state:", error);
-            Object.values(roomData.textures || {}).forEach(tex => tex?.dispose());
-            return null;
-        }
-    }
-
-    async buildRoom(roomData) {
-        if (!roomData || !roomData.textureUrls) {
-            console.error("buildRoom called with invalid roomData:", roomData);
-            this.scene.background = this.defaultIndoorBg; 
-            return;
-        }
-
-        console.log(`Building room ${roomData.id} (${roomData.type})...`);
-        this.clearCurrentRoom();
-        this.currentRoomObjects = new THREE.Group();
-        this.currentRoomObjects.name = `RoomObjects_${roomData.id}`;
-
-        const textureLoadPromises = [];
-        const roomSize = roomData.structure?.dimensions?.width || this.tileSize;
-        const textureScale = 2; 
-
+        // Set background first
         if (roomData.type === 'outdoor') {
-            if (roomData.textureUrls.sky) {
-                this.textureManager.loadTextureFromUrl(roomData.textureUrls.sky, true)
-                    .then(skyTexture => {
-                        if (skyTexture) {
-                            if (this.scene.background instanceof THREE.Texture) {
-                                this.scene.background.dispose();
-                            }
-                            this.scene.background = skyTexture;
-                            console.log("Skybox texture applied.");
-                        } else {
-                            console.warn("Skybox texture failed to load, using default.");
-                            this.scene.background = this.defaultOutdoorBg;
-                        }
-                    }).catch(e => {
-                        console.error("Error loading sky texture, using default:", e);
-                        this.scene.background = this.defaultOutdoorBg;
-                    });
-            } else {
-                console.log("No sky texture URL, using default outdoor background.");
-                this.scene.background = this.defaultOutdoorBg;
+             if (roomData.textures.sky) {
+                // The texture should already have Equirectangular mapping set by RoomGenerator
+                this.scene.background = roomData.textures.sky;
+                
+                // Initialize object highlighter with detected objects
+                if (window.game && window.game.objectHighlighter && roomData.objects) {
+                    window.game.objectHighlighter.setObjects(roomData.objects);
+                }
+             } else {
+                this.scene.background = this.defaultOutdoorBg; // Fallback blue sky
+                
+                // No objects to highlight
+                if (window.game && window.game.objectHighlighter) {
+                    window.game.objectHighlighter.setObjects([]);
+                }
+             }
+        } else { // Indoor
+            this.scene.background = this.defaultIndoorBg; // Dark background
+            
+            // Indoor rooms don't have panoramic highlighting yet
+            if (window.game && window.game.objectHighlighter) {
+                window.game.objectHighlighter.setObjects([]);
             }
-        } else {
-            console.log("Indoor room, using default indoor background.");
-            this.scene.background = this.defaultIndoorBg;
         }
 
-        if (roomData.textureUrls.floor) {
-            textureLoadPromises.push(
-                this.textureManager.loadTextureFromUrl(roomData.textureUrls.floor, false, roomSize, roomSize, textureScale).then(floorTexture => {
-                    const floorGeometry = new THREE.PlaneGeometry(roomSize, roomSize);
-                    const floorMaterial = new THREE.MeshStandardMaterial({
-                        map: floorTexture || this.textureManager.createPlaceholderTexture(0xffffff, roomSize, textureScale), 
-                        roughness: 0.8, metalness: 0.1 
-                    });
-                    const floorMesh = new THREE.Mesh(floorGeometry, floorMaterial);
-                    floorMesh.name = "FloorMesh";
-                    floorMesh.rotation.x = -Math.PI / 2;
-                    floorMesh.position.y = 0;
-                    floorMesh.receiveShadow = true; 
-                    this.currentRoomObjects.add(floorMesh);
-                    console.log("Floor mesh added.");
-                }).catch(e => console.error("Error processing floor texture promise:", e)) 
-            );
-        } else {
-            console.warn("No floor texture URL available for room. Adding placeholder floor.");
-            const floorGeometry = new THREE.PlaneGeometry(roomSize, roomSize);
-            const floorMaterial = new THREE.MeshStandardMaterial({
-                map: this.textureManager.createPlaceholderTexture(0xffffff, roomSize, textureScale),
-                roughness: 0.8, metalness: 0.1
-            });
+        // Floor
+        if (roomData.textures.floor) {
+            const floorGeometry = new THREE.PlaneGeometry(this.tileSize, this.tileSize);
+            const floorMaterial = new THREE.MeshStandardMaterial({ map: roomData.textures.floor });
             const floorMesh = new THREE.Mesh(floorGeometry, floorMaterial);
-            floorMesh.name = "PlaceholderFloorMesh";
             floorMesh.rotation.x = -Math.PI / 2;
             floorMesh.position.y = 0;
-            floorMesh.receiveShadow = true;
             this.currentRoomObjects.add(floorMesh);
+        } else {
+            console.warn("No floor texture available for room.");
         }
 
+
+        // Walls & Ceiling (Indoor only)
         if (roomData.type === 'indoor') {
-            const wallHeight = roomData.structure?.dimensions?.height || 4;
-            const wallTextureUrl = roomData.textureUrls.wall;
+            const wallHeight = 4; // Use height from roomData.structure if available later
 
-            textureLoadPromises.push(
-                this.textureManager.loadTextureFromUrl(wallTextureUrl, false, roomSize, wallHeight, textureScale).then(wallTexture => {
-                    const wallMaterial = new THREE.MeshStandardMaterial({
-                        map: wallTexture || this.textureManager.createPlaceholderTexture(0xaaaaaa, roomSize, textureScale), 
-                        roughness: 0.8, metalness: 0.1
-                    });
-                    if (!wallTextureUrl) console.warn("No wall texture URL, using placeholder material.");
+            // Walls
+            if (roomData.textures.wall) {
+                const wallGeometry = new THREE.BoxGeometry(this.tileSize, wallHeight, 0.1); // Thin walls
+                const wallMaterial = new THREE.MeshStandardMaterial({ map: roomData.textures.wall });
+                const wallPositions = [
+                    { x: 0, y: wallHeight / 2, z: -this.tileSize / 2, rotY: 0 },         // Back
+                    { x: 0, y: wallHeight / 2, z: this.tileSize / 2, rotY: Math.PI },   // Front
+                    { x: -this.tileSize / 2, y: wallHeight / 2, z: 0, rotY: Math.PI / 2 }, // Left
+                    { x: this.tileSize / 2, y: wallHeight / 2, z: 0, rotY: -Math.PI / 2 } // Right
+                ];
+                wallPositions.forEach(pos => {
+                    const wallMesh = new THREE.Mesh(wallGeometry.clone(), wallMaterial); // Clone geometry
+                    wallMesh.position.set(pos.x, pos.y, pos.z);
+                    wallMesh.rotation.y = pos.rotY;
+                    this.currentRoomObjects.add(wallMesh);
+                });
+            } else {
+                console.warn("No wall texture available for indoor room.");
+            }
 
-                    const wallPositions = [
-                        { geometry: new THREE.PlaneGeometry(roomSize, wallHeight), x: 0, y: wallHeight / 2, z: -roomSize / 2, rotY: 0 },
-                        { geometry: new THREE.PlaneGeometry(roomSize, wallHeight), x: 0, y: wallHeight / 2, z: roomSize / 2, rotY: Math.PI },
-                        { geometry: new THREE.PlaneGeometry(roomSize, wallHeight), x: -roomSize / 2, y: wallHeight / 2, z: 0, rotY: Math.PI / 2 },
-                        { geometry: new THREE.PlaneGeometry(roomSize, wallHeight), x: roomSize / 2, y: wallHeight / 2, z: 0, rotY: -Math.PI / 2 }
-                    ];
 
-                    wallPositions.forEach((pos, i) => {
-                        const wallMesh = new THREE.Mesh(pos.geometry, wallMaterial);
-                        wallMesh.name = `WallMesh_${i}`;
-                        wallMesh.position.set(pos.x, pos.y, pos.z);
-                        wallMesh.rotation.y = pos.rotY;
-                        wallMesh.receiveShadow = true; 
-                        this.currentRoomObjects.add(wallMesh);
-                    });
-                    console.log("Wall meshes added.");
-                }).catch(e => console.error("Error processing wall texture promise:", e))
-            );
+            // Ceiling
+            const ceilingGeometry = new THREE.PlaneGeometry(this.tileSize, this.tileSize);
+            let ceilingMaterial;
+             if (roomData.textures.ceiling) {
+                 ceilingMaterial = new THREE.MeshStandardMaterial({ map: roomData.textures.ceiling, side: THREE.DoubleSide });
+             } else {
+                 // Default solid color if no texture provided
+                 ceilingMaterial = new THREE.MeshStandardMaterial({ color: 0x555555, side: THREE.DoubleSide });
+             }
+            const ceilingMesh = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
+            ceilingMesh.rotation.x = Math.PI / 2;
+            ceilingMesh.position.y = wallHeight;
+            this.currentRoomObjects.add(ceilingMesh);
 
-            const ceilingTextureUrl = roomData.textureUrls.ceiling;
-            textureLoadPromises.push(
-                this.textureManager.loadTextureFromUrl(ceilingTextureUrl, false, roomSize, roomSize, textureScale).then(ceilingTexture => {
-                    const ceilingGeometry = new THREE.PlaneGeometry(roomSize, roomSize);
-                    const ceilingMaterial = new THREE.MeshStandardMaterial({
-                        map: ceilingTexture || this.textureManager.createPlaceholderTexture(0x555555, roomSize, textureScale), 
-                        side: THREE.DoubleSide, 
-                        roughness: 0.9, metalness: 0.1
-                    });
-                    if (!ceilingTextureUrl) console.warn("No ceiling texture URL, using placeholder material.");
-
-                    const ceilingMesh = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
-                    ceilingMesh.name = "CeilingMesh";
-                    ceilingMesh.rotation.x = Math.PI / 2;
-                    ceilingMesh.position.y = wallHeight;
-                    ceilingMesh.receiveShadow = true;
-                    this.currentRoomObjects.add(ceilingMesh);
-                    console.log("Ceiling mesh added.");
-                }).catch(e => console.error("Error processing ceiling texture promise:", e))
-            );
+             // Adjust lighting/sky for indoor is handled by scene.background change
         }
 
-        try {
-            await Promise.all(textureLoadPromises);
-            console.log("All essential geometry promises resolved.");
-            this.worldObjects.add(this.currentRoomObjects);
-            console.log(`Room geometry group added to scene for room ${roomData.id}`);
+        // Add the group of room objects to the main world group
+        this.worldObjects.add(this.currentRoomObjects);
 
-            if (window.game?.minimap) {
-                window.game.minimap.updateFloorTexture(); 
-                if (window.game?.playerController) {
-                    window.game.minimap.update(window.game.playerController.getPlayerPosition()); 
-                }
-            }
-        } catch (error) {
-            console.error("Error loading one or more textures for the room:", error);
-            this.worldObjects.add(this.currentRoomObjects);
-            console.warn("Added potentially incomplete room geometry to scene after texture errors.");
-            if (window.game?.minimap) {
-                window.game.minimap.updateFloorTexture(); 
-            }
-        } finally {
-            console.log(`Finished building room ${roomData.id}.`);
-        }
+        // TODO: Implement more complex room structures based on roomData.structure
+        // TODO: Add objects based on roomData.objects
     }
 
     clearCurrentRoom() {
-        if (this.scene.background instanceof THREE.Texture) {
-            let isCached = false;
-            this.textureManager.cachedTextures.forEach(cachedTex => {
-                if (cachedTex === this.scene.background) {
-                    isCached = true;
-                }
-            });
-
-            if (!isCached) {
-                console.log("Disposing non-cached background texture.");
-                this.scene.background.dispose();
-            } else {
-                console.log("Keeping cached background texture in memory, removing from scene background.");
-            }
-            this.scene.background = null; 
-        }
-
-        if (this.currentRoomObjects) {
-            console.log(`Clearing current room objects (${this.currentRoomObjects.name})...`);
-            const objectsToRemove = [];
+         if (this.currentRoomObjects) {
+            // Dispose of geometry and materials to free memory
             this.currentRoomObjects.traverse(child => {
-                objectsToRemove.push(child);
-            });
-
-            objectsToRemove.forEach(child => {
                 if (child instanceof THREE.Mesh) {
-                    child.geometry?.dispose();
-                    const materials = Array.isArray(child.material) ? child.material : [child.material];
-                    materials.forEach(mat => {
-                        if (mat) {
-                            let isMapCached = false;
-                            if (mat.map instanceof THREE.Texture) {
-                                this.textureManager.cachedTextures.forEach(cachedTex => {
-                                    if (cachedTex === mat.map) {
-                                        isMapCached = true;
-                                    }
-                                });
-                                if (!isMapCached) {
-                                    mat.map.dispose();
-                                }
-                            }
-                            mat.dispose();
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        // Check if material is an array (though unlikely with current setup)
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(mat => {
+                                if (mat.map) mat.map.dispose();
+                                mat.dispose();
+                            });
+                        } else {
+                            // Dispose texture map if it exists
+                            if (child.material.map) child.material.map.dispose();
+                            child.material.dispose(); // Dispose the material itself
                         }
-                    });
-                } else if (child instanceof CSS2DObject) {
-                    child.removeFromParent();
-                    if (child.element && child.element.parentNode) {
-                        child.element.parentNode.removeChild(child.element);
                     }
                 }
-                child.removeFromParent();
             });
-
+            // Remove the group from the world and clear its children
             this.worldObjects.remove(this.currentRoomObjects);
+            this.currentRoomObjects.clear(); // Ensure all children are removed from the group
             this.currentRoomObjects = null;
-            console.log("Room objects cleared.");
-        } else {
-            // console.log("No current room objects to clear.");
         }
+         // Also clear the background texture
+         if (this.scene.background instanceof THREE.Texture) {
+            this.scene.background.dispose();
+         }
+         this.scene.background = null; // Reset background
 
-        if (window.game?.minimap) {
-            window.game.minimap.updateFloorTexture(); 
+        // Clear any highlighted objects
+        if (window.game && window.game.objectHighlighter) {
+            window.game.objectHighlighter.setObjects([]);
         }
     }
 
-    showLoading(message = 'Loading...') {
-        if (this.loadingScreen) {
-            this.loadingScreen.querySelector('p').textContent = message;
-            this.loadingScreen.style.display = 'flex';
-        } else {
-            console.warn("Loading screen element not found.");
-        }
+    showLoading() {
+        this.loadingScreen.style.display = 'flex';
     }
 
     hideLoading() {
-        if (this.loadingScreen) {
-            this.loadingScreen.style.display = 'none';
-        }
+        this.loadingScreen.style.display = 'none';
     }
 
     update(playerPosition) {
-        // Potential future use: check player position for loading adjacent areas, etc.
+        // Placeholder for logic to trigger loading new areas when player moves
+        // Example: Check if player is near the edge of the current tile/room
+        const currentTileX = Math.floor(playerPosition.x / this.tileSize);
+        const currentTileZ = Math.floor(playerPosition.z / this.tileSize);
+
+        // Update minimap if it exists
+        if (window.game && window.game.minimap) {
+            window.game.minimap.update(playerPosition);
+        }
     }
 
-    async teleportToRoom(roomId, position = new THREE.Vector3(0, 1.6, 5), rotation = { yaw: 0, pitch: 0 }) {
-        if (this.isLoading) {
-            console.warn("Already loading a room, teleport cancelled.");
-            if (window.game?.uiManager) window.game.uiManager.showNotification('Loading already in progress.', 'info');
+    addRoomToCollection(roomData) {
+         // Dispose of textures after adding their URLs to the record
+         // This prevents holding onto large textures in memory for non-active rooms
+         const textureUrls = {
+             floor: roomData.textures.floor?.image?.src || null,
+             wall: roomData.textures.wall?.image?.src || null,
+             ceiling: roomData.textures.ceiling?.image?.src || null,
+             sky: roomData.textures.sky?.image?.src || null // Store skybox URL
+         };
+
+         if (roomData.textures.floor) roomData.textures.floor.dispose();
+         if (roomData.textures.wall) roomData.textures.wall.dispose();
+         if (roomData.textures.ceiling) roomData.textures.ceiling.dispose();
+         if (roomData.textures.sky) roomData.textures.sky.dispose();
+
+
+        // Create serializable room record with texture URLs
+        const roomRecord = {
+            id: Date.now() + Math.random(), // Unique identifier
+            name: `Room ${this.rooms.length + 1}`, // Simple naming
+            prompt: roomData.prompt,
+            type: roomData.type,
+            textureUrls: textureUrls, // Use the stored URLs
+            timestamp: new Date().toISOString(),
+            structure: roomData.structure,
+            objects: roomData.objects
+        };
+
+        this.rooms.push(roomRecord);
+        this.currentRoomIndex = this.rooms.length - 1;
+
+        // Update UI with new room
+        if (window.game && window.game.uiManager) {
+            window.game.uiManager.updateRoomGallery(this.rooms, this.currentRoomIndex);
+        }
+    }
+
+    exportRoomsToJSON() {
+        const dataStr = JSON.stringify(this.rooms, null, 2);
+        const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+
+        const exportFileDefaultName = `llm-meridian-rooms-${new Date().toISOString().slice(0,10)}.json`;
+
+        const linkElement = document.createElement('a');
+        linkElement.setAttribute('href', dataUri);
+        linkElement.setAttribute('download', exportFileDefaultName);
+        linkElement.click();
+    }
+
+    async importRoomsFromJSON(jsonData) {
+        try {
+            const importedRooms = JSON.parse(jsonData);
+            if (!Array.isArray(importedRooms)) {
+                throw new Error("Invalid rooms data: expected an array");
+            }
+
+             // Basic validation of imported structure (optional but recommended)
+             importedRooms.forEach((room, index) => {
+                 if (!room.id || !room.prompt || !room.type || !room.textureUrls) {
+                     console.warn(`Room at index ${index} is missing required properties.`);
+                     // Potentially skip this room or throw error
+                 }
+             });
+
+
+            this.rooms = importedRooms;
+             this.currentRoomIndex = -1; // Reset current room index as we don't know which one is active
+
+            // Update UI with imported rooms
+            if (window.game && window.game.uiManager) {
+                window.game.uiManager.updateRoomGallery(this.rooms, this.currentRoomIndex);
+            }
+
+            return true;
+        } catch (error) {
+            console.error("Failed to import rooms data:", error);
+             if (window.game && window.game.uiManager) {
+                 window.game.uiManager.showNotification('Import failed: Invalid JSON format.', 'error');
+             }
+            return false;
+        }
+    }
+
+    async teleportToRoom(index) {
+        if (index < 0 || index >= this.rooms.length) {
+            console.error("Invalid room index:", index);
+             if (window.game && window.game.uiManager) {
+                 window.game.uiManager.showNotification(`Teleport failed: Room index ${index} out of bounds.`, 'error');
+             }
             return;
         }
 
-        const rooms = this.room.roomState.rooms || {};
-        const roomToLoad = rooms[roomId];
-
-        if (!roomId || !roomToLoad) {
-            console.error("Invalid or non-existent room ID for teleport:", roomId);
-            if (window.game?.uiManager) {
-                window.game.uiManager.showNotification(`Teleport failed: Room ID "${roomId}" not found.`, 'error');
-            }
-            return;
-        }
-
-        const currentPresence = this.room.presence[this.room.clientId] || {};
-        if (currentPresence.currentRoomId === roomId && this.currentRoomObjects) {
-            console.log(`Already in room ${roomId}. Teleport skipped.`);
-            if (window.game?.playerController) {
-                window.game.playerController.resetPosition(position, rotation);
-            }
-            if (window.game?.uiManager) {
-                window.game.uiManager.updateRoomGallery();
-            }
-            return;
-        }
-
-        console.log(`Teleporting to room ${roomId}: ${roomToLoad.name} (${roomToLoad.type})`);
-        this.showLoading(`Teleporting to ${roomToLoad.name}...`);
-        this.isLoading = true;
+        this.showLoading();
+        this.clearCurrentRoom(); // Clear existing geometry and background
 
         try {
-            this.room.updatePresence({
-                ...currentPresence,
-                currentRoomId: roomId,
-                x: position.x,
-                y: position.y,
-                z: position.z,
-                yaw: rotation.yaw,
-                pitch: rotation.pitch
-            });
-            console.log(`Presence updated for room ${roomId}.`);
+            const roomToLoad = this.rooms[index];
+            console.log(`Teleporting to room ${index}: ${roomToLoad.name} (${roomToLoad.type})`);
 
-            await this.buildRoom(roomToLoad); 
+            // Load textures from stored URLs
+            const textures = {
+                 floor: roomToLoad.textureUrls.floor ? await this.loadTextureFromUrl(roomToLoad.textureUrls.floor, false) : null,
+                 wall: roomToLoad.textureUrls.wall ? await this.loadTextureFromUrl(roomToLoad.textureUrls.wall, false) : null,
+                 ceiling: roomToLoad.textureUrls.ceiling ? await this.loadTextureFromUrl(roomToLoad.textureUrls.ceiling, false) : null,
+                 sky: roomToLoad.textureUrls.sky ? await this.loadTextureFromUrl(roomToLoad.textureUrls.sky, true) : null // Load skybox if URL exists
+            };
 
-            console.log(`Room ${roomId} built. Resetting player position.`);
-            if (window.game && window.game.playerController) {
-                window.game.playerController.resetPosition(position, rotation);
-                window.game.playerController.sendPresenceUpdate();
-            } else {
-                console.warn("Player controller not available to reset position after teleport.");
-            }
+            // Create room data structure expected by buildRoom
+            const roomData = {
+                ...roomToLoad, // Includes prompt, type, structure, objects
+                textures: textures // Pass the loaded THREE.Texture objects
+            };
 
+            this.buildRoom(roomData); // Build the room with loaded textures
+            this.currentRoomIndex = index;
+
+            // Reset player position (optional, maybe teleport to a specific entry point?)
+             if (window.game && window.game.playerController) {
+                 window.game.playerController.resetPosition(); // Add this method to PlayerController
+             }
+
+
+            // Update UI to reflect current room
             if (window.game && window.game.uiManager) {
-                window.game.uiManager.showNotification(`Teleported to ${roomToLoad.name}.`);
-                window.game.uiManager.updateRoomGallery();
+                window.game.uiManager.updateRoomGallery(this.rooms, this.currentRoomIndex);
+                 window.game.uiManager.showNotification(`Teleported to ${roomToLoad.name}.`);
             }
 
         } catch (error) {
-            console.error("Error during teleport process:", error);
-            this.clearCurrentRoom(); 
-            this.scene.background = this.defaultOutdoorBg; 
-            this.room.updatePresence({ ...currentPresence, currentRoomId: null });
-            if (window.game && window.game.uiManager) {
-                window.game.uiManager.showNotification('Teleport failed: Error loading room.', 'error');
-                window.game.uiManager.updateRoomGallery(); 
-            }
+            console.error("Error teleporting to room:", error);
+            // Handle teleportation error - maybe load a default or show message
+             this.scene.background = this.defaultOutdoorBg; // Fallback background on error
+             if (window.game && window.game.uiManager) {
+                 window.game.uiManager.showNotification('Teleport failed: Error loading room data.', 'error');
+             }
         } finally {
             this.hideLoading();
-            this.isLoading = false;
-            console.log(`Teleport process for ${roomId} finished.`);
         }
     }
 
-    async loadNewDebugRoom(prompt, type = 'outdoor') {
-        await this.createAndJoinNewRoom(prompt, type);
+    loadTextureFromUrl(url, isSkybox = false) {
+        return new Promise((resolve, reject) => {
+            const textureLoader = new THREE.TextureLoader();
+            textureLoader.load(
+                url,
+                (texture) => {
+                     if (isSkybox) {
+                         texture.mapping = THREE.EquirectangularReflectionMapping;
+                         // No wrapping or repeat for skybox
+                     } else {
+                        texture.wrapS = THREE.RepeatWrapping;
+                        texture.wrapT = THREE.RepeatWrapping;
+                        // Apply repeat based on tile size and assumed texture scale
+                        const textureScale = 2;
+                        const repeatValue = this.tileSize / textureScale;
+                        texture.repeat.set(repeatValue, repeatValue);
+                     }
+                    resolve(texture);
+                },
+                undefined, // onProgress
+                (error) => {
+                     console.error(`Failed to load texture from URL: ${url}`, error);
+                    reject(error); // Reject the promise on load failure
+                }
+            );
+        });
     }
 
-    dispose() {
-        console.log("Disposing WorldManager resources...");
-        this.clearCurrentRoom(); 
-        this.textureManager.disposeCache(); 
-        this.scene.remove(this.worldObjects); 
+     // Debug function to trigger loading
+    async loadNewDebugRoom(prompt, type = 'outdoor') {
+        await this.loadNewArea(prompt, type);
     }
 }
