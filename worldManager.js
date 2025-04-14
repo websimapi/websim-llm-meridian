@@ -13,6 +13,12 @@ export class WorldManager {
         this.tileSize = 50;
         this.rooms = []; // Store all generated rooms data
         this.currentRoomIndex = -1; // Track the currently active room
+        this.navigationHistory = []; // Track room navigation history
+        
+        // Return beam setup
+        this.returnBeam = this.createReturnBeam();
+        this.scene.add(this.returnBeam);
+        this.returnBeam.visible = false;
 
         // Default background colors
         this.defaultOutdoorBg = new THREE.Color(0x87ceeb); // Sky blue
@@ -45,6 +51,14 @@ export class WorldManager {
             const newRoomData = await this.roomGenerator.generateRoomData(prompt, type);
             this.buildRoom(newRoomData);
             this.addRoomToCollection(newRoomData);
+            
+            // Add current room to navigation history if we have a valid current index
+            if (this.currentRoomIndex > -1) {
+                this.navigationHistory.push(this.currentRoomIndex);
+            }
+            
+            // Update return beam visibility
+            this.updateReturnBeam();
          } catch (error) {
             console.error("Error generating new area:", error);
              // Set a fallback background based on intended type
@@ -54,6 +68,208 @@ export class WorldManager {
             this.hideLoading();
             console.log("New area loaded.");
          }
+    }
+    
+    async loadNewAreaFromObject(prompt, type = 'outdoor', sourceObject) {
+        console.log(`Loading new area from object interaction: ${prompt}, Type: ${type}`);
+        this.showLoading();
+        this.clearCurrentRoom();
+
+        try {
+            // Enhanced prompt to make the connection with the source object clearer
+            const enhancedPrompt = `${prompt}. This area is connected to the ${sourceObject.name} from the previous location.`;
+            
+            const newRoomData = await this.roomGenerator.generateRoomData(enhancedPrompt, type);
+            
+            // Store the source object that led to this room
+            newRoomData.sourceObject = {
+                id: sourceObject.id,
+                name: sourceObject.name,
+                description: sourceObject.description
+            };
+            
+            this.buildRoom(newRoomData);
+            
+            // Add current room to navigation history before changing to new room
+            if (this.currentRoomIndex > -1) {
+                this.navigationHistory.push(this.currentRoomIndex);
+            }
+            
+            this.addRoomToCollection(newRoomData);
+            
+            // Update return beam visibility
+            this.updateReturnBeam();
+            
+            // Notify user of successful transition
+            if (window.game && window.game.uiManager) {
+                window.game.uiManager.showNotification(`You've traveled to: ${sourceObject.name}`, 'info', 4000);
+            }
+        } catch (error) {
+            console.error("Error generating new area from object:", error);
+            this.scene.background = type === 'indoor' ? this.defaultIndoorBg : this.defaultOutdoorBg;
+            
+            if (window.game && window.game.uiManager) {
+                window.game.uiManager.showNotification("Failed to generate the new location.", 'error');
+            }
+        } finally {
+            this.hideLoading();
+        }
+    }
+    
+    navigateToPreviousRoom() {
+        if (this.navigationHistory.length === 0) {
+            console.log("No previous room to navigate to");
+            if (window.game && window.game.uiManager) {
+                window.game.uiManager.showNotification("This is the starting point.", 'info');
+            }
+            return;
+        }
+        
+        const previousRoomIndex = this.navigationHistory.pop();
+        console.log(`Navigating back to room index: ${previousRoomIndex}`);
+        
+        // Use existing teleport functionality to go back
+        this.teleportToRoom(previousRoomIndex);
+        
+        // Update return beam visibility after navigation
+        this.updateReturnBeam();
+        
+        // Show notification about returning
+        if (window.game && window.game.uiManager) {
+            window.game.uiManager.showNotification("Returned to previous location", 'info');
+        }
+    }
+    
+    updateReturnBeam() {
+        // Show return beam only if we have navigation history
+        this.returnBeam.visible = this.navigationHistory.length > 0;
+        
+        if (this.returnBeam.visible) {
+            // Position the beam in a visible location in the current room
+            this.returnBeam.position.set(0, 5, -this.tileSize/4); // Positioned toward the back of the room
+            
+            // Make it gently pulse/hover
+            this.returnBeam.userData.animationPhase = 0;
+        }
+    }
+    
+    createReturnBeam() {
+        const group = new THREE.Group();
+        
+        // Light cylinder
+        const cylinderGeometry = new THREE.CylinderGeometry(0.5, 2, 10, 16, 1, true);
+        const cylinderMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffffcc,
+            transparent: true,
+            opacity: 0.6,
+            side: THREE.DoubleSide
+        });
+        const cylinder = new THREE.Mesh(cylinderGeometry, cylinderMaterial);
+        cylinder.position.y = 5; // Center vertically
+        group.add(cylinder);
+        
+        // Base glow
+        const baseGeometry = new THREE.CircleGeometry(3, 32);
+        const baseMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffffdd,
+            transparent: true,
+            opacity: 0.4,
+            side: THREE.DoubleSide
+        });
+        const base = new THREE.Mesh(baseGeometry, baseMaterial);
+        base.rotation.x = -Math.PI / 2; // Lay flat
+        base.position.y = 0.1; // Slightly above ground
+        group.add(base);
+        
+        // Particles/sparkles (using points)
+        const particlesGeometry = new THREE.BufferGeometry();
+        const particleCount = 100;
+        const positions = new Float32Array(particleCount * 3);
+        
+        for (let i = 0; i < particleCount; i++) {
+            // Random positions around and inside the beam
+            const angle = Math.random() * Math.PI * 2;
+            const radius = Math.random() * 2;
+            const height = Math.random() * 10;
+            
+            positions[i * 3] = Math.cos(angle) * radius;
+            positions[i * 3 + 1] = height;
+            positions[i * 3 + 2] = Math.sin(angle) * radius;
+        }
+        
+        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        
+        const particlesMaterial = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.2,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        const particles = new THREE.Points(particlesGeometry, particlesMaterial);
+        group.add(particles);
+        
+        // Add text label about interaction
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 128;
+        const context = canvas.getContext('2d');
+        
+        context.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        
+        context.font = 'bold 24px Arial';
+        context.textAlign = 'center';
+        context.fillStyle = 'white';
+        context.fillText('Return to', canvas.width/2, 40);
+        context.fillText('Previous Room', canvas.width/2, 80);
+        context.fillText('(Press E)', canvas.width/2, 110);
+        
+        const labelTexture = new THREE.CanvasTexture(canvas);
+        const labelMaterial = new THREE.MeshBasicMaterial({
+            map: labelTexture,
+            transparent: true,
+            opacity: 0.9,
+            side: THREE.DoubleSide
+        });
+        
+        const labelGeometry = new THREE.PlaneGeometry(5, 2.5);
+        const label = new THREE.Mesh(labelGeometry, labelMaterial);
+        label.position.set(0, 6, 0); // Position above the beam
+        
+        group.add(label);
+        
+        // Set up animation data
+        group.userData = {
+            animationPhase: 0,
+            originalY: 5 // Original height for the center of the beam
+        };
+        
+        return group;
+    }
+    
+    animateReturnBeam(deltaTime) {
+        if (!this.returnBeam.visible) return;
+        
+        // Update animation phase
+        this.returnBeam.userData.animationPhase += deltaTime * 2; // Speed control
+        
+        // Gentle hovering motion
+        const hoverOffset = Math.sin(this.returnBeam.userData.animationPhase) * 0.3;
+        this.returnBeam.position.y = hoverOffset;
+        
+        // Make the beam slowly rotate
+        this.returnBeam.rotation.y += deltaTime * 0.5;
+        
+        // Make sure the label always faces the camera
+        if (window.game && window.game.camera) {
+            // Find the label (last child)
+            const label = this.returnBeam.children[this.returnBeam.children.length - 1];
+            if (label) {
+                // Make label face the camera
+                label.lookAt(window.game.camera.position);
+            }
+        }
     }
 
     buildRoom(roomData) {
@@ -143,9 +359,9 @@ export class WorldManager {
 
         // Add the group of room objects to the main world group
         this.worldObjects.add(this.currentRoomObjects);
-
-        // TODO: Implement more complex room structures based on roomData.structure
-        // TODO: Add objects based on roomData.objects
+        
+        // Update return beam after building room
+        this.updateReturnBeam();
     }
 
     clearCurrentRoom() {
@@ -194,7 +410,7 @@ export class WorldManager {
         this.loadingScreen.style.display = 'none';
     }
 
-    update(playerPosition) {
+    update(playerPosition, deltaTime) {
         // Placeholder for logic to trigger loading new areas when player moves
         // Example: Check if player is near the edge of the current tile/room
         const currentTileX = Math.floor(playerPosition.x / this.tileSize);
@@ -203,6 +419,11 @@ export class WorldManager {
         // Update minimap if it exists
         if (window.game && window.game.minimap) {
             window.game.minimap.update(playerPosition);
+        }
+        
+        // Animate return beam
+        if (deltaTime !== undefined) {
+            this.animateReturnBeam(deltaTime);
         }
     }
 
@@ -231,7 +452,8 @@ export class WorldManager {
             textureUrls: textureUrls, // Use the stored URLs
             timestamp: new Date().toISOString(),
             structure: roomData.structure,
-            objects: roomData.objects
+            objects: roomData.objects,
+            sourceObject: roomData.sourceObject // Store the object that led to this room, if any
         };
 
         this.rooms.push(roomRecord);

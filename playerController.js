@@ -26,6 +26,10 @@ export class PlayerController {
         this.scene.add(this.yawObject);
 
         this.clock = new THREE.Clock();
+        
+        // For object interaction
+        this.raycaster = new THREE.Raycaster();
+        this.interactionDistance = 5; // How far objects can be interacted with
 
         this.initEventListeners();
         this.resetPosition();
@@ -35,8 +39,12 @@ export class PlayerController {
         document.addEventListener('mousemove', this.onMouseMove.bind(this), false);
         document.addEventListener('keydown', this.onKeyDown.bind(this), false);
         document.addEventListener('keyup', this.onKeyUp.bind(this), false);
-        document.getElementById('game-canvas').addEventListener('click', () => {
-            this.lockPointer();
+        document.getElementById('game-canvas').addEventListener('click', (event) => {
+            // For uninterrupted clicks on objects, only lock if not already locked and not clicking an interactive highlight
+            if (!document.pointerLockElement && !event.target.closest('.object-highlight.interactive')) {
+                this.lockPointer();
+            } 
+            // Object interactions handled by ObjectHighlighter
         });
         document.addEventListener('pointerlockchange', this.onPointerLockChange.bind(this), false);
     }
@@ -122,6 +130,17 @@ export class PlayerController {
         const playerHeight = 1.6;
         if (this.yawObject.position.y < playerHeight) {
             this.yawObject.position.y = playerHeight;
+        }
+        
+        // Check if player is near the return beam
+        if (this.worldManager.returnBeam && this.worldManager.returnBeam.visible) {
+            const distance = this.yawObject.position.distanceTo(this.worldManager.returnBeam.position);
+            if (distance < 8) { // If player is within 8 units of the beam
+                // Optionally show a hint about the 'E' key to use the beam
+                if (window.game && window.game.uiManager) {
+                    // Possibly add a UI hint here about the 'E' key
+                }
+            }
         }
     }
 

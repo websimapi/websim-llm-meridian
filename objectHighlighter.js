@@ -14,7 +14,12 @@ export class ObjectHighlighter {
         this.objectMarkers = new THREE.Group();
         this.scene.add(this.objectMarkers);
         
+        // Track click state
+        this.isObjectInteractable = true;
+        this.isPointerDown = false;
+        
         this.initUI();
+        this.initInteractions();
     }
 
     setObjects(objects) {
@@ -137,9 +142,14 @@ export class ObjectHighlighter {
         // Update info panel content
         const nameElement = this.infoPanel.querySelector('.object-name');
         const descElement = this.infoPanel.querySelector('.object-description');
+        const interactElement = this.infoPanel.querySelector('.object-interact-hint');
         
         if (nameElement) nameElement.textContent = object.name;
         if (descElement) descElement.textContent = object.description;
+        if (interactElement) interactElement.textContent = 'Click to explore this area';
+        
+        // Mark the highlight as interactive
+        this.highlightElement.classList.add('interactive');
         
         // Update position in world coordinates
         const radius = 200; // Same radius used for markers
@@ -173,7 +183,7 @@ export class ObjectHighlighter {
             
             // Position info panel near highlight but ensure it stays on screen
             const panelWidth = 300;
-            const panelHeight = 120;
+            const panelHeight = 150; // Increased for interact hint
             let panelX = screenPosition.x + size/2 + 20;
             let panelY = screenPosition.y - panelHeight/2;
             
@@ -192,7 +202,10 @@ export class ObjectHighlighter {
     }
     
     hideObjectHighlight() {
-        if (this.highlightElement) this.highlightElement.style.display = 'none';
+        if (this.highlightElement) {
+            this.highlightElement.style.display = 'none';
+            this.highlightElement.classList.remove('interactive');
+        }
         this.hideInfoPanel();
     }
     
@@ -230,12 +243,72 @@ export class ObjectHighlighter {
         const descElement = document.createElement('div');
         descElement.className = 'object-description';
         
+        const interactElement = document.createElement('div');
+        interactElement.className = 'object-interact-hint';
+        
         this.infoPanel.appendChild(nameElement);
         this.infoPanel.appendChild(descElement);
+        this.infoPanel.appendChild(interactElement);
         document.body.appendChild(this.infoPanel);
         
         // Initially hide elements
         this.hideObjectHighlight();
+    }
+    
+    initInteractions() {
+        // Add click event listener to the game canvas
+        const gameCanvas = document.getElementById('game-canvas');
+        
+        // Mouse down event
+        gameCanvas.addEventListener('mousedown', (event) => {
+            this.isPointerDown = true;
+        });
+        
+        // Mouse up event with interaction logic
+        gameCanvas.addEventListener('mouseup', (event) => {
+            if (!this.isPointerDown) return;
+            this.isPointerDown = false;
+            
+            // Only process if we're looking at an object and pointer lock is active
+            if (this.currentlyLooking && document.pointerLockElement === document.body) {
+                this.handleObjectInteraction(this.currentlyLooking);
+            }
+        });
+        
+        // Handle return beam interaction
+        document.addEventListener('keydown', (event) => {
+            if (event.code === 'KeyE' && window.game?.worldManager?.returnBeam?.visible) {
+                this.handleReturnBeamInteraction();
+            }
+        });
+    }
+    
+    handleObjectInteraction(object) {
+        if (!this.isObjectInteractable) return;
+        
+        // Generate a new room prompt based on the object's description
+        const basePrompt = object.description || object.name;
+        const explorationPrompt = `Exploring the ${object.name}: ${basePrompt}`;
+        
+        console.log(`Interacting with object: ${object.name}`);
+        console.log(`New room prompt: ${explorationPrompt}`);
+        
+        // Start room transition through world manager
+        if (window.game && window.game.worldManager) {
+            window.game.worldManager.loadNewAreaFromObject(explorationPrompt, 'outdoor', object);
+            
+            // Temporarily disable interaction to prevent spam clicks
+            this.isObjectInteractable = false;
+            setTimeout(() => {
+                this.isObjectInteractable = true;
+            }, 2000);
+        }
+    }
+    
+    handleReturnBeamInteraction() {
+        if (window.game && window.game.worldManager) {
+            window.game.worldManager.navigateToPreviousRoom();
+        }
     }
     
     toggleMarkersVisibility(visible) {

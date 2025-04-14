@@ -49,20 +49,6 @@ const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8); // Slightly 
 directionalLight.position.set(5, 10, 7.5);
 scene.add(directionalLight);
 
-// Add debug controls for object highlighting
-const highlightControls = document.createElement('div');
-highlightControls.className = 'object-highlight-controls';
-highlightControls.innerHTML = `
-    <button id="toggle-markers">Toggle Object Markers</button>
-`;
-document.body.appendChild(highlightControls);
-
-document.getElementById('toggle-markers').addEventListener('click', () => {
-    if (window.game && window.game.objectHighlighter) {
-        window.game.objectHighlighter.toggleMarkersVisibility();
-    }
-});
-
 // Game Loop
 function animate() {
     requestAnimationFrame(animate);
@@ -70,8 +56,8 @@ function animate() {
     const delta = window.game.playerController.clock.getDelta(); // Get delta from player controller's clock
 
     playerController.update(delta); // Pass delta time to player controller
-    // WorldManager update might not need delta if not doing time-based simulation
-    worldManager.update(playerController.getPlayerPosition()); // Update world based on player position
+    // WorldManager update might need delta for animations
+    worldManager.update(playerController.getPlayerPosition(), delta); // Pass delta for return beam animation
     minimap.update(playerController.getPlayerPosition()); // Update minimap
     objectHighlighter.update(); // Update object highlighting
 
@@ -86,6 +72,15 @@ window.addEventListener('resize', () => {
     // Consider minimap resize if needed
 });
 
+// Handle keyboard input for the return beam
+window.addEventListener('keydown', (event) => {
+    if (event.code === 'KeyE') {
+        if (worldManager.returnBeam.visible) {
+            worldManager.navigateToPreviousRoom();
+        }
+    }
+});
+
 // Initial world generation
 worldManager.generateInitialWorld().then(() => {
     animate(); // Start the game loop after the initial world is ready
@@ -94,7 +89,3 @@ worldManager.generateInitialWorld().then(() => {
     uiManager.showNotification("Error: Could not load initial world.", "error");
     // Handle error appropriately, maybe show a static error message or fallback scene
 });
-
-// Add debug axes (optional)
-// const axesHelper = new THREE.AxesHelper( 5 );
-// scene.add( axesHelper );
